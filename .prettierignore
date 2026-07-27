@@ -1,0 +1,8 @@
+node_modules
+.next
+out
+cdk.out
+bin/Debug
+bin/Release
+obj
+*.md

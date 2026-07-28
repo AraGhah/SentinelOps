@@ -7,6 +7,14 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   eslintConfigPrettier,
+  {
+    // React Compiler-oriented rule that flags any setState reachable from an
+    // effect body, including plain async data fetching (and shadcn/ui's own
+    // generated use-mobile hook) — too aggressive for this codebase for now.
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

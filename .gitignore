@@ -1,4 +1,4 @@
-# ---- Node / Next.js (apps/web) ----
+#  Node / Next.js
 node_modules/
 .next/
 out/
@@ -8,37 +8,34 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# ---- .NET (apps/api, apps/workers) ----
+# .NET (apps/api, apps/workers) 
 bin/
 obj/
 *.user
 *.suo
 .vs/
 
-# ---- AWS CDK (infrastructure) ----
+#  AWS CDK (infrastructure) 
 cdk.out/
 *.d.ts
 !jest.config.d.ts
 cdk.context.json
 
-# ---- Env / secrets ----
+#  Env / secrets 
 .env
 .env.local
 .env.*.local
 !.env.example
 
-# ---- Logs ----
+# Logs 
 *.log
 logs/
 
-# ---- OS / Editor ----
+# OS / Editor 
 .DS_Store
 Thumbs.db
 .idea/
 *.swp
 
-# Note: root-level VSCode workspace settings are intentionally not ignored here;
-# add .vscode/ if you don't want to share editor config.
-
-# ---- Docker ----
+#Docker
 docker-compose.override.yml

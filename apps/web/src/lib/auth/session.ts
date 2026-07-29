@@ -3,9 +3,14 @@ import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/constants";
 
 export type Session = {
-  token: string;
+  accessToken: string;
+  idToken: string;
+  refreshToken: string;
   email: string;
+  expiresAt: number; // epoch ms
 };
+
+const REFRESH_SKEW_MS = 60_000;
 
 export async function getSession(): Promise<Session | null> {
   const cookieStore = await cookies();
@@ -19,6 +24,20 @@ export async function getSession(): Promise<Session | null> {
   }
 }
 
+// Returns a session with a non-expired access token, transparently refreshing
+// it against the API when it's within a minute of expiring (or already past).
+export async function getValidSession(): Promise<Session | null> {
+  const session = await getSession();
+  if (!session) return null;
+
+  if (Date.now() < session.expiresAt - REFRESH_SKEW_MS) {
+    return session;
+  }
+
+  const { refreshSession } = await import("@/lib/auth/actions");
+  return refreshSession(session);
+}
+
 export async function setSession(session: Session): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, JSON.stringify(session), {
@@ -26,7 +45,7 @@ export async function setSession(session: Session): Promise<void> {
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 8,
+    maxAge: 60 * 60 * 24 * 30,
   });
 }
 

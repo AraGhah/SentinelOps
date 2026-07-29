@@ -5,9 +5,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { login } from "@/lib/auth/actions";
-import { loginSchema, type LoginInput } from "@/lib/validations/auth";
+import { register } from "@/lib/auth/actions";
+import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,30 +18,18 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 
-export function LoginForm() {
+export function RegisterForm() {
   const [isPending, startTransition] = useTransition();
-  const router = useRouter();
 
-  const form = useForm<LoginInput>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+  const form = useForm<RegisterInput>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { email: "", password: "", confirmPassword: "" },
   });
 
-  function onSubmit(values: LoginInput) {
+  function onSubmit(values: RegisterInput) {
     startTransition(async () => {
-      const result = await login(values);
-      if (!result) return;
-
-      if ("mfaRequired" in result) {
-        const params = new URLSearchParams({
-          email: result.email,
-          session: result.challengeSession,
-        });
-        router.push(`/login/mfa?${params.toString()}`);
-        return;
-      }
-
-      if (result.error) {
+      const result = await register(values);
+      if (result?.error) {
         toast.error(result.error);
       }
     });
@@ -74,7 +61,25 @@ export function LoginForm() {
                 <Input
                   type="password"
                   placeholder="••••••••"
-                  autoComplete="current-password"
+                  autoComplete="new-password"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="confirmPassword"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Confirm password</FormLabel>
+              <FormControl>
+                <Input
+                  type="password"
+                  placeholder="••••••••"
+                  autoComplete="new-password"
                   {...field}
                 />
               </FormControl>
@@ -83,16 +88,14 @@ export function LoginForm() {
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Signing in..." : "Sign in"}
+          {isPending ? "Creating account..." : "Create account"}
         </Button>
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <Link href="/forgot-password" className="underline underline-offset-4">
-            Forgot password?
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link href="/login" className="underline underline-offset-4">
+            Sign in
           </Link>
-          <Link href="/register" className="underline underline-offset-4">
-            Create account
-          </Link>
-        </div>
+        </p>
       </form>
     </Form>
   );

@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SentinelOps.Api.Auth;
 using SentinelOps.Api.Data;
+using SentinelOps.Api.Domain;
+using SentinelOps.Api.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +14,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentOrganizationAccessor, CurrentOrganizationAccessor>();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IAuthorizationHandler, OrganizationRoleAuthorizationHandler>();
 
 builder.Services.AddDbContext<SentinelOpsDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("SentinelOpsDb")));
@@ -52,7 +60,14 @@ builder.Services
             },
         };
     });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    foreach (var role in Enum.GetValues<OrganizationRole>())
+    {
+        options.AddPolicy(OrgPolicies.ForRole(role), policy =>
+            policy.Requirements.Add(new OrganizationRoleRequirement(role)));
+    }
+});
 
 var app = builder.Build();
 

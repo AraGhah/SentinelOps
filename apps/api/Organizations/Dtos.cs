@@ -1,0 +1,27 @@
+using SentinelOps.Api.Domain;
+
+namespace SentinelOps.Api.Organizations;
+
+public record CreateOrganizationRequest(string Name);
+
+public record OrganizationResponse(Guid Id, string Name, string Slug, DateTimeOffset CreatedAtUtc);
+
+public record MyOrganizationResponse(Guid Id, string Name, string Slug, OrganizationRole Role, bool IsCurrent);
+
+public record OrganizationSettingsResponse(
+    string TimeZone, string? AlertNotificationEmail, bool RequireMfaForMembers, DateTimeOffset UpdatedAtUtc);
+
+public record UpdateOrganizationSettingsRequest(
+    string TimeZone, string? AlertNotificationEmail, bool RequireMfaForMembers);
+
+public record MemberResponse(
+    Guid MembershipId, Guid UserId, string Email, OrganizationRole Role, bool IsActive, DateTimeOffset CreatedAtUtc);
+
+public record UpdateMemberRoleRequest(OrganizationRole Role);
+
+public record CreateInvitationRequest(string Email, OrganizationRole Role);
+
+public record InvitationResponse(
+    Guid Id, string Email, OrganizationRole Role, InvitationStatus Status, DateTimeOffset ExpiresAtUtc, string Token);
+
+public record AcceptInvitationRequest(string Token);

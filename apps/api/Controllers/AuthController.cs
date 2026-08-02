@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using SentinelOps.Api.Auth;
 
 namespace SentinelOps.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/auth")]
+[EnableRateLimiting("auth")]
 public class AuthController(CognitoAuthService authService, ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("register")]

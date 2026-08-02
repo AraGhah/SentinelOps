@@ -1,8 +1,11 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SentinelOps.Api.Auth;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Tenancy;
@@ -15,10 +18,45 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
+
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentOrganizationAccessor, CurrentOrganizationAccessor>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<IAuthorizationHandler, OrganizationRoleAuthorizationHandler>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Strict, per-IP: applied to auth endpoints (login/register/forgot-password/etc.)
+    // to slow down credential-stuffing and account-enumeration attempts.
+    options.AddFixedWindowLimiter("auth", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 5;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueLimit = 0;
+    });
+
+    // Looser default for the rest of the authenticated API, partitioned per caller
+    // (JWT `sub`) so one busy user/org can't starve another.
+    options.AddPolicy("api", httpContext =>
+    {
+        var partitionKey = httpContext.User.FindFirst("sub")?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(partitionKey, _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 100,
+            Window = TimeSpan.FromSeconds(10),
+            SegmentsPerWindow = 2,
+            QueueLimit = 0,
+        });
+    });
+});
 
 builder.Services.AddDbContext<SentinelOpsDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("SentinelOpsDb")));
@@ -71,17 +109,26 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+app.UseExceptionHandler();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "SentinelOps API v1"));
 }
 
 app.UseHttpsRedirection();
 
+app.UseMiddleware<RequestLoggingMiddleware>();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapControllers();
+app.UseRateLimiter();
+
+// Default rate-limit policy for the whole API; AuthController overrides it
+// with the stricter "auth" policy via [EnableRateLimiting("auth")].
+app.MapControllers().RequireRateLimiting("api");
 
 app.Run();

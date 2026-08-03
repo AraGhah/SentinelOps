@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib/core';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { Construct } from 'constructs';
 
 export class InfrastructureStack extends cdk.Stack {
@@ -60,6 +61,30 @@ export class InfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'Region', {
       value: this.region,
       description: 'AWS region — set as Cognito__Region on apps/api',
+    });
+
+    const alertsQueueDlq = new sqs.Queue(this, 'AlertsQueueDlq', {
+      queueName: 'sentinelops-alerts-dlq',
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    // Ingested alerts land here for apps/workers to pick up asynchronously.
+    // Whichever construct ends up hosting the API's compute needs
+    // `alertsQueue.grantSendMessages(...)`, and the workers' compute needs
+    // `alertsQueue.grantConsumeMessages(...)` — neither exists yet in this stack.
+    const alertsQueue = new sqs.Queue(this, 'AlertsQueue', {
+      queueName: 'sentinelops-alerts',
+      visibilityTimeout: cdk.Duration.seconds(60),
+      retentionPeriod: cdk.Duration.days(4),
+      deadLetterQueue: {
+        queue: alertsQueueDlq,
+        maxReceiveCount: 5,
+      },
+    });
+
+    new cdk.CfnOutput(this, 'AlertsQueueUrl', {
+      value: alertsQueue.queueUrl,
+      description: 'SQS queue URL for ingested alerts — set as Aws__Sqs__AlertsQueueUrl on apps/api',
     });
   }
 }

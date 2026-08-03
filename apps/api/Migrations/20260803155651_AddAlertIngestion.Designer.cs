@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SentinelOps.Api.Data;
@@ -11,9 +12,11 @@ using SentinelOps.Api.Data;
 namespace SentinelOps.Api.Migrations
 {
     [DbContext(typeof(SentinelOpsDbContext))]
-    partial class SentinelOpsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803155651_AddAlertIngestion")]
+    partial class AddAlertIngestion
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

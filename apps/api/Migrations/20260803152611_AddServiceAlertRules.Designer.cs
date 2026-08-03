@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SentinelOps.Api.Data;
@@ -11,9 +12,11 @@ using SentinelOps.Api.Data;
 namespace SentinelOps.Api.Migrations
 {
     [DbContext(typeof(SentinelOpsDbContext))]
-    partial class SentinelOpsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260803152611_AddServiceAlertRules")]
+    partial class AddServiceAlertRules
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -26,9 +29,6 @@ namespace SentinelOps.Api.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CorrelationId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAtUtc")
@@ -58,9 +58,6 @@ namespace SentinelOps.Api.Migrations
 
                     b.Property<Guid>("OrganizationId")
                         .HasColumnType("uuid");
-
-                    b.Property<string>("RawPayload")
-                        .HasColumnType("jsonb");
 
                     b.Property<string>("Region")
                         .HasMaxLength(100)
@@ -422,40 +419,6 @@ namespace SentinelOps.Api.Migrations
                     b.ToTable("IncidentTags");
                 });
 
-            modelBuilder.Entity("SentinelOps.Api.Domain.IngestionRequestRecord", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AlertId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("CorrelationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("IdempotencyKey")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<Guid>("IntegrationId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("OrganizationId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("IntegrationId", "IdempotencyKey")
-                        .IsUnique();
-
-                    b.ToTable("IngestionRequestRecords");
-                });
-
             modelBuilder.Entity("SentinelOps.Api.Domain.Integration", b =>
                 {
                     b.Property<Guid>("Id")
@@ -497,11 +460,6 @@ namespace SentinelOps.Api.Migrations
                     b.Property<Guid>("ServiceId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("SigningSecret")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -535,9 +493,6 @@ namespace SentinelOps.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 
@@ -1126,15 +1081,6 @@ namespace SentinelOps.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Incident");
-                });
-
-            modelBuilder.Entity("SentinelOps.Api.Domain.IngestionRequestRecord", b =>
-                {
-                    b.HasOne("SentinelOps.Api.Domain.Integration", null)
-                        .WithMany()
-                        .HasForeignKey("IntegrationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("SentinelOps.Api.Domain.Integration", b =>

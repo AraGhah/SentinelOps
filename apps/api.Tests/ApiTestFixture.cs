@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SentinelOps.Api.Data;
+using SentinelOps.Api.Ingestion;
 using Testcontainers.PostgreSql;
 
 namespace SentinelOps.Api.Tests;
@@ -51,6 +52,11 @@ public class ApiTestFixture : IAsyncLifetime
                     options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
                     options.DefaultScheme = TestAuthHandler.SchemeName;
                 });
+
+                // No real SQS queue in tests — swap in an in-memory recorder that
+                // tests can resolve and assert against.
+                services.AddSingleton<FakeAlertQueuePublisher>();
+                services.AddSingleton<IAlertQueuePublisher>(sp => sp.GetRequiredService<FakeAlertQueuePublisher>());
             });
         });
 

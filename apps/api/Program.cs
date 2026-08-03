@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -8,6 +9,7 @@ using SentinelOps.Api.Auth;
 using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
+using SentinelOps.Api.Ingestion;
 using SentinelOps.Api.Tenancy;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -56,6 +58,24 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
         });
     });
+
+    // Alert ingestion has no JWT `sub` to partition on — callers authenticate with
+    // a per-integration API key instead, so that's the partition key. Tighter than
+    // "api" since a single misbehaving source integration shouldn't need 100/10s.
+    options.AddPolicy("ingestion", httpContext =>
+    {
+        var partitionKey = httpContext.Request.RouteValues["integrationId"]?.ToString()
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(partitionKey, _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 50,
+            Window = TimeSpan.FromSeconds(10),
+            SegmentsPerWindow = 2,
+            QueueLimit = 0,
+        });
+    });
 });
 
 builder.Services.AddDbContext<SentinelOpsDbContext>(options =>
@@ -66,6 +86,13 @@ builder.Services
     .Bind(builder.Configuration.GetSection(CognitoOptions.SectionName))
     .ValidateDataAnnotations();
 builder.Services.AddSingleton<CognitoAuthService>();
+
+builder.Services
+    .AddOptions<AwsSqsOptions>()
+    .Bind(builder.Configuration.GetSection(AwsSqsOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddSingleton<IAlertQueuePublisher, SqsAlertQueuePublisher>();
+builder.Services.AddScoped<IAlertIngestionService, AlertIngestionService>();
 
 var cognitoOptions = builder.Configuration.GetSection(CognitoOptions.SectionName).Get<CognitoOptions>()!;
 
@@ -97,7 +124,12 @@ builder.Services
                 return Task.CompletedTask;
             },
         };
-    });
+    })
+    // Second scheme, opted into explicitly via [Authorize(AuthenticationSchemes = ...)]
+    // on AlertIngestionController — never the default, so it can't accidentally
+    // authenticate a request meant for the JWT-protected org endpoints.
+    .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
+        ApiKeyAuthenticationHandler.SchemeName, _ => { });
 builder.Services.AddAuthorization(options =>
 {
     foreach (var role in Enum.GetValues<OrganizationRole>())

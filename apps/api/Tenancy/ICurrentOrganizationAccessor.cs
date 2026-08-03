@@ -13,6 +13,10 @@ public interface ICurrentOrganizationAccessor
     Guid? MembershipId { get; }
 
     void Set(Guid organizationId, OrganizationRole role, Guid membershipId);
+
+    // For callers with no user membership at all — e.g. an integration API key,
+    // which is scoped to the organization that owns it but has no role/membership.
+    void Set(Guid organizationId);
 }
 
 public class CurrentOrganizationAccessor : ICurrentOrganizationAccessor
@@ -26,5 +30,12 @@ public class CurrentOrganizationAccessor : ICurrentOrganizationAccessor
         OrganizationId = organizationId;
         Role = role;
         MembershipId = membershipId;
+    }
+
+    public void Set(Guid organizationId)
+    {
+        OrganizationId = organizationId;
+        Role = null;
+        MembershipId = null;
     }
 }

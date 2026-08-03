@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Common;
+using SentinelOps.Api.Incidents;
 using SentinelOps.Api.Services;
 using static SentinelOps.Api.Tests.OrgTestHelpers;
 
@@ -100,6 +101,62 @@ public class ServicesTests(ApiTestFixture fixture)
         var cycleResponse = await client.PostAsync(
             $"/api/v1/organizations/{org.Id}/services/{serviceB.Id}/dependencies/{serviceA.Id}", null);
         Assert.Equal(HttpStatusCode.BadRequest, cycleResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task AlertRules_CreateListUpdateDelete()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Alert Rules Org");
+        var service = await CreateServiceAsync(client, org.Id, "Auth Service");
+
+        var createResponse = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/services/{service.Id}/alert-rules",
+            new CreateAlertRuleRequest("High error rate", "Fires on elevated 5xx rate", "error_rate > 5%", IncidentSeverity.High, true));
+        createResponse.EnsureSuccessStatusCode();
+        var rule = await createResponse.Content.ReadFromJsonAsync<AlertRuleResponse>(Json.Options);
+        Assert.Equal(service.Id, rule!.ServiceId);
+
+        var listResponse = await client.GetFromJsonAsync<List<AlertRuleResponse>>(
+            $"/api/v1/organizations/{org.Id}/services/{service.Id}/alert-rules", Json.Options);
+        Assert.Contains(listResponse!, r => r.Id == rule.Id);
+
+        var updateResponse = await client.PutAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/services/{service.Id}/alert-rules/{rule.Id}",
+            new UpdateAlertRuleRequest("High error rate", "Updated", "error_rate > 10%", IncidentSeverity.Critical, false));
+        updateResponse.EnsureSuccessStatusCode();
+        var updated = await updateResponse.Content.ReadFromJsonAsync<AlertRuleResponse>(Json.Options);
+        Assert.Equal(IncidentSeverity.Critical, updated!.Severity);
+        Assert.False(updated.IsEnabled);
+
+        var deleteResponse = await client.DeleteAsync(
+            $"/api/v1/organizations/{org.Id}/services/{service.Id}/alert-rules/{rule.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Health_And_OpenIncidents_ReflectServiceState()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Health Org");
+        var service = await CreateServiceAsync(client, org.Id, "Notification Service");
+
+        var incidentResponse = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents",
+            new { Title = "Notifications delayed", Severity = IncidentSeverity.Critical, ServiceId = service.Id });
+        incidentResponse.EnsureSuccessStatusCode();
+
+        var health = await client.GetFromJsonAsync<ServiceHealthResponse>(
+            $"/api/v1/organizations/{org.Id}/services/{service.Id}/health", Json.Options);
+        Assert.Equal(1, health!.OpenIncidentCount);
+        Assert.Equal(1, health.CriticalOpenIncidentCount);
+
+        var openIncidents = await client.GetFromJsonAsync<List<IncidentResponse>>(
+            $"/api/v1/organizations/{org.Id}/services/{service.Id}/incidents", Json.Options);
+        Assert.Single(openIncidents!);
+        Assert.Equal("Notifications delayed", openIncidents![0].Title);
     }
 
     private static async Task<ServiceResponse> CreateServiceAsync(HttpClient client, Guid orgId, string name)

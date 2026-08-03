@@ -36,3 +36,22 @@ public class ServiceDependency : ITenantOwned
     public Service? Service { get; set; }
     public Service? DependsOnService { get; set; }
 }
+
+// Condition is a free-form expression (e.g. "error_rate > 5%") rather than a typed
+// metric/operator/threshold triple, since there is no metrics-evaluation engine
+// behind this yet — same scoping-down as the raw Alert.Metadata field.
+public class ServiceAlertRule : ITenantOwned
+{
+    public Guid Id { get; set; }
+    public Guid OrganizationId { get; set; }
+    public Guid ServiceId { get; set; }
+    public required string Name { get; set; }
+    public string? Description { get; set; }
+    public required string Condition { get; set; }
+    public IncidentSeverity Severity { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+
+    public Service? Service { get; set; }
+}

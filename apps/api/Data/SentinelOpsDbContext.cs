@@ -15,6 +15,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<Service> Services => Set<Service>();
     public DbSet<ServiceDependency> ServiceDependencies => Set<ServiceDependency>();
+    public DbSet<ServiceAlertRule> ServiceAlertRules => Set<ServiceAlertRule>();
     public DbSet<Integration> Integrations => Set<Integration>();
     public DbSet<Incident> Incidents => Set<Incident>();
     public DbSet<IncidentComment> IncidentComments => Set<IncidentComment>();
@@ -22,6 +23,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
     public DbSet<IncidentTag> IncidentTags => Set<IncidentTag>();
     public DbSet<RelatedIncidentLink> RelatedIncidentLinks => Set<RelatedIncidentLink>();
     public DbSet<Alert> Alerts => Set<Alert>();
+    public DbSet<IngestionRequestRecord> IngestionRequestRecords => Set<IngestionRequestRecord>();
     public DbSet<EscalationPolicy> EscalationPolicies => Set<EscalationPolicy>();
     public DbSet<EscalationLevel> EscalationLevels => Set<EscalationLevel>();
     public DbSet<EscalationLevelTarget> EscalationLevelTargets => Set<EscalationLevelTarget>();
@@ -136,6 +138,19 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<ServiceAlertRule>(b =>
+        {
+            b.HasKey(r => r.Id);
+            b.Property(r => r.Name).HasMaxLength(200);
+            b.Property(r => r.Description).HasMaxLength(2000);
+            b.Property(r => r.Condition).HasMaxLength(500);
+            b.HasIndex(r => new { r.OrganizationId, r.ServiceId });
+            b.HasQueryFilter(r => r.OrganizationId == currentOrganization.OrganizationId);
+
+            b.HasOne(r => r.Service).WithMany().HasForeignKey(r => r.ServiceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<Integration>(b =>
         {
             b.HasKey(i => i.Id);
@@ -143,6 +158,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
             b.Property(i => i.Provider).HasMaxLength(100);
             b.Property(i => i.ApiKeyHash).HasMaxLength(128);
             b.Property(i => i.ApiKeyLastFour).HasMaxLength(4);
+            b.Property(i => i.SigningSecret).HasMaxLength(64);
             b.HasIndex(i => new { i.OrganizationId, i.ServiceId });
             b.HasQueryFilter(i => i.OrganizationId == currentOrganization.OrganizationId);
 
@@ -221,6 +237,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
             b.Property(a => a.Environment).HasMaxLength(100);
             b.Property(a => a.Region).HasMaxLength(100);
             b.Property(a => a.Metadata).HasColumnType("jsonb");
+            b.Property(a => a.RawPayload).HasColumnType("jsonb");
             b.HasIndex(a => new { a.OrganizationId, a.ExternalId });
             b.HasIndex(a => new { a.OrganizationId, a.IncidentId });
             b.HasQueryFilter(a => a.OrganizationId == currentOrganization.OrganizationId);
@@ -231,6 +248,17 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
                 .OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.Incident).WithMany().HasForeignKey(a => a.IncidentId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<IngestionRequestRecord>(b =>
+        {
+            b.HasKey(r => r.Id);
+            b.Property(r => r.IdempotencyKey).HasMaxLength(300);
+            b.HasIndex(r => new { r.IntegrationId, r.IdempotencyKey }).IsUnique();
+            b.HasQueryFilter(r => r.OrganizationId == currentOrganization.OrganizationId);
+
+            b.HasOne<Integration>().WithMany().HasForeignKey(r => r.IntegrationId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<EscalationPolicy>(b =>

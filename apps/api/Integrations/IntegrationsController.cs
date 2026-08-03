@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
+using SentinelOps.Api.Ingestion;
 using SentinelOps.Api.Tenancy;
 
 namespace SentinelOps.Api.Integrations;
@@ -13,7 +14,8 @@ namespace SentinelOps.Api.Integrations;
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/services/{serviceId:guid}/integrations")]
-public class IntegrationsController(SentinelOpsDbContext db, IAuditLogger auditLogger) : ControllerBase
+public class IntegrationsController(
+    SentinelOpsDbContext db, IAuditLogger auditLogger, IAlertIngestionService ingestionService) : ControllerBase
 {
     [HttpGet]
     [Authorize(Policy = OrgPolicies.Viewer)]
@@ -51,6 +53,7 @@ public class IntegrationsController(SentinelOpsDbContext db, IAuditLogger auditL
         if (!serviceExists) return NotFound();
 
         var (apiKey, hash, lastFour) = GenerateApiKey();
+        var signingSecret = GenerateSigningSecret();
         var integration = new Integration
         {
             Id = Guid.NewGuid(),
@@ -60,6 +63,7 @@ public class IntegrationsController(SentinelOpsDbContext db, IAuditLogger auditL
             Provider = request.Provider.Trim(),
             ApiKeyHash = hash,
             ApiKeyLastFour = lastFour,
+            SigningSecret = signingSecret,
             Status = IntegrationStatus.Active,
             CreatedAtUtc = DateTimeOffset.UtcNow,
         };
@@ -68,7 +72,7 @@ public class IntegrationsController(SentinelOpsDbContext db, IAuditLogger auditL
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync("integration.created", nameof(Integration), integration.Id, new { integration.Name }, ct);
 
-        return Ok(new IntegrationCreatedResponse(ToResponse(integration), apiKey));
+        return Ok(new IntegrationCreatedResponse(ToResponse(integration), apiKey, signingSecret));
     }
 
     [HttpPost("{integrationId:guid}/rotate-key")]
@@ -80,13 +84,47 @@ public class IntegrationsController(SentinelOpsDbContext db, IAuditLogger auditL
         if (integration is null) return NotFound();
 
         var (apiKey, hash, lastFour) = GenerateApiKey();
+        var signingSecret = GenerateSigningSecret();
         integration.ApiKeyHash = hash;
         integration.ApiKeyLastFour = lastFour;
+        integration.SigningSecret = signingSecret;
 
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync("integration.key_rotated", nameof(Integration), integration.Id, null, ct);
 
-        return Ok(new IntegrationCreatedResponse(ToResponse(integration), apiKey));
+        return Ok(new IntegrationCreatedResponse(ToResponse(integration), apiKey, signingSecret));
+    }
+
+    [HttpPost("{integrationId:guid}/test-event")]
+    [Authorize(Policy = OrgPolicies.Administrator)]
+    public async Task<ActionResult<TestEventResponse>> SendTestEvent(
+        Guid orgId, Guid serviceId, Guid integrationId, CancellationToken ct)
+    {
+        var integration = await Find(orgId, serviceId, integrationId, ct);
+        if (integration is null) return NotFound();
+        if (integration.Status != IntegrationStatus.Active)
+        {
+            return Problem(title: "Invalid request", detail: "Integration is not active.", statusCode: 400);
+        }
+
+        var request = new IngestAlertRequest(
+            ExternalId: $"test-{Guid.NewGuid()}",
+            Source: "test-event",
+            Title: "Test alert",
+            Description: "Synthetic alert generated to verify this integration is wired up correctly.",
+            Severity: IncidentSeverity.Low,
+            TimestampUtc: DateTimeOffset.UtcNow,
+            Environment: "test",
+            Region: null,
+            Metadata: null);
+
+        var result = await ingestionService.IngestAsync(
+            orgId, integrationId, request, rawPayload: System.Text.Json.JsonSerializer.Serialize(request),
+            idempotencyKey: $"test:{Guid.NewGuid()}", ct);
+
+        await auditLogger.LogAsync("integration.test_event_sent", nameof(Integration), integration.Id, null, ct);
+
+        return Ok(new TestEventResponse(result.AlertId, result.CorrelationId));
     }
 
     [HttpPost("{integrationId:guid}/revoke")]
@@ -116,6 +154,9 @@ public class IntegrationsController(SentinelOpsDbContext db, IAuditLogger auditL
         var lastFour = apiKey[^4..];
         return (apiKey, hash, lastFour);
     }
+
+    private static string GenerateSigningSecret() =>
+        "whsec_" + Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
 
     private static IntegrationResponse ToResponse(Integration i) => new(
         i.Id, i.ServiceId, i.Name, i.Provider, i.ApiKeyLastFour, i.Status, i.LastUsedAtUtc, i.CreatedAtUtc, i.RevokedAtUtc);

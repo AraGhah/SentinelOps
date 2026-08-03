@@ -23,3 +23,25 @@ public record ServiceResponse(
 public record ServiceFilters(ServiceEnvironment? Environment, ServiceStatus? Status);
 
 public record ServiceDependencyResponse(Guid Id, Guid ServiceId, Guid DependsOnServiceId);
+
+public record ServiceHealthResponse(
+    Guid ServiceId, ServiceStatus Status, int OpenIncidentCount, int CriticalOpenIncidentCount,
+    DateTimeOffset? LastIncidentCreatedAtUtc);
+
+public record CreateAlertRuleRequest(
+    [Required, MaxLength(200)] string Name,
+    [MaxLength(2000)] string? Description,
+    [Required, MaxLength(500)] string Condition,
+    IncidentSeverity Severity,
+    bool IsEnabled);
+
+public record UpdateAlertRuleRequest(
+    [Required, MaxLength(200)] string Name,
+    [MaxLength(2000)] string? Description,
+    [Required, MaxLength(500)] string Condition,
+    IncidentSeverity Severity,
+    bool IsEnabled);
+
+public record AlertRuleResponse(
+    Guid Id, Guid ServiceId, string Name, string? Description, string Condition, IncidentSeverity Severity,
+    bool IsEnabled, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);

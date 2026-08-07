@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <PackageReference Include="AWSSDK.CognitoIdentityProvider" Version="4.0.103.1" />
-    <PackageReference Include="AWSSDK.SQS" Version="4.0.100" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.8" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
@@ -21,6 +20,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="SentinelOps.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\workers\SentinelOps.Events\SentinelOps.Events.csproj" />
   </ItemGroup>
 
 </Project>

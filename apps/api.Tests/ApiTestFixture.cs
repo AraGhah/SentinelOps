@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Ingestion;
+using SentinelOps.Events;
 using Testcontainers.PostgreSql;
 
 namespace SentinelOps.Api.Tests;
@@ -57,6 +58,10 @@ public class ApiTestFixture : IAsyncLifetime
                 // tests can resolve and assert against.
                 services.AddSingleton<FakeAlertQueuePublisher>();
                 services.AddSingleton<IAlertQueuePublisher>(sp => sp.GetRequiredService<FakeAlertQueuePublisher>());
+
+                // No real EventBridge bus in tests either — same recorder pattern.
+                services.AddSingleton<FakeEventPublisher>();
+                services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<FakeEventPublisher>());
             });
         });
 

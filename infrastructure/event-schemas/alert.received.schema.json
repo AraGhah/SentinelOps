@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sentinelops.internal/event-schemas/alert.received.schema.json",
+  "title": "alert.received",
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
+    "alertId":{"type":"string","format":"uuid"},"integrationId":{"type":"string","format":"uuid"},"externalId":{"type":"string"},"source":{"type":"string"},"title":{"type":"string"},"severity":{"enum":["Critical","High","Medium","Low"]},"timestampUtc":{"type":"string","format":"date-time"},"environment":{"type":"string"},"region":{"type":["string","null"]}
+  },
+  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","alertId","integrationId","externalId","source","title","severity","timestampUtc","environment"]
+}

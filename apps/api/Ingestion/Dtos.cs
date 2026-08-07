@@ -15,11 +15,3 @@ public record IngestAlertRequest(
     string? Metadata);
 
 public record IngestAlertResponse(Guid AlertId, Guid CorrelationId, string Status);
-
-public record AwsSqsOptions
-{
-    public const string SectionName = "Aws:Sqs";
-
-    public required string Region { get; set; }
-    public required string AlertsQueueUrl { get; set; }
-}

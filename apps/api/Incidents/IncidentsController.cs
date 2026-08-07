@@ -5,13 +5,15 @@ using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Tenancy;
+using SentinelOps.Events;
 
 namespace SentinelOps.Api.Incidents;
 
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/incidents")]
-public class IncidentsController(SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger)
+public class IncidentsController(
+    SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger, IEventPublisher eventPublisher)
     : ControllerBase
 {
     [HttpGet]
@@ -161,6 +163,19 @@ public class IncidentsController(SentinelOpsDbContext db, ICurrentUserService cu
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync(
             "incident.status_changed", nameof(Incident), incident.Id, new { From = fromStatus, To = request.Status }, ct);
+
+        if (request.Status == IncidentStatus.Acknowledged)
+        {
+            await eventPublisher.PublishAsync(EventSources.Api, EventTypes.IncidentAcknowledged,
+                new IncidentAcknowledgedDetail(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, incident.Id, actor.Id),
+                ct);
+        }
+        else if (request.Status == IncidentStatus.Resolved)
+        {
+            await eventPublisher.PublishAsync(EventSources.Api, EventTypes.IncidentResolved,
+                new IncidentResolvedDetail(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, incident.Id, actor.Id),
+                ct);
+        }
 
         return Ok(ToResponse(incident));
     }

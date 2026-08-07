@@ -11,6 +11,7 @@ using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Ingestion;
 using SentinelOps.Api.Tenancy;
+using SentinelOps.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -88,10 +89,11 @@ builder.Services
 builder.Services.AddSingleton<CognitoAuthService>();
 
 builder.Services
-    .AddOptions<AwsSqsOptions>()
-    .Bind(builder.Configuration.GetSection(AwsSqsOptions.SectionName))
+    .AddOptions<EventBridgeOptions>()
+    .Bind(builder.Configuration.GetSection(EventBridgeOptions.SectionName))
     .ValidateDataAnnotations();
-builder.Services.AddSingleton<IAlertQueuePublisher, SqsAlertQueuePublisher>();
+builder.Services.AddSingleton<IEventPublisher, EventBridgeEventPublisher>();
+builder.Services.AddSingleton<IAlertQueuePublisher, EventBridgeAlertPublisher>();
 builder.Services.AddScoped<IAlertIngestionService, AlertIngestionService>();
 
 var cognitoOptions = builder.Configuration.GetSection(CognitoOptions.SectionName).Get<CognitoOptions>()!;

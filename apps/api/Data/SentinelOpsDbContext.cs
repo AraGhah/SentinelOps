@@ -32,6 +32,9 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
     public DbSet<ScheduleOverride> ScheduleOverrides => Set<ScheduleOverride>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
+    public DbSet<ProcessedWorkerEvent> ProcessedWorkerEvents => Set<ProcessedWorkerEvent>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -351,6 +354,32 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
 
             b.HasOne(a => a.Incident).WithMany().HasForeignKey(a => a.IncidentId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ProcessedWorkerEvent>(b =>
+        {
+            b.HasKey(e => e.Id);
+            b.Property(e => e.WorkerName).HasMaxLength(100);
+            b.HasIndex(e => new { e.WorkerName, e.EventId }).IsUnique();
+        });
+
+        modelBuilder.Entity<Notification>(b =>
+        {
+            b.HasKey(n => n.Id);
+            b.Property(n => n.Channel).HasMaxLength(50);
+            b.Property(n => n.FailureReason).HasMaxLength(1000);
+            b.HasIndex(n => new { n.OrganizationId, n.IncidentId });
+            b.HasQueryFilter(n => n.OrganizationId == currentOrganization.OrganizationId);
+
+            b.HasOne(n => n.Incident).WithMany().HasForeignKey(n => n.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AnalyticsEvent>(b =>
+        {
+            b.HasKey(e => e.Id);
+            b.Property(e => e.EventType).HasMaxLength(100);
+            b.HasIndex(e => new { e.OrganizationId, e.EventType, e.OccurredAtUtc });
         });
     }
 }

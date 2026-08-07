@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://sentinelops.internal/event-schemas/incident.resolved.schema.json",
+  "title": "incident.resolved",
+  "version": "1.0",
+  "type": "object",
+  "properties": {
+    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
+    "incidentId":{"type":"string","format":"uuid"},"resolvedByUserId":{"type":"string","format":"uuid"}
+  },
+  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","incidentId","resolvedByUserId"]
+}

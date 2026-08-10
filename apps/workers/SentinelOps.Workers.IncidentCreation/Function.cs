@@ -18,20 +18,28 @@ public class Function
 {
     public const string WorkerName = "incident-creation";
 
+    // Kept small — the dedup worker's FingerprintTtl (48h) covers how long a
+    // fingerprint stays alive between alerts; this only needs to survive long
+    // enough for a redelivered "Pending" lookup to find the real incident id.
+    private static readonly TimeSpan FingerprintTtl = TimeSpan.FromHours(48);
+
     private readonly string _connectionString;
     private readonly IEventPublisher _eventPublisher;
+    private readonly IFingerprintStore _fingerprintStore;
 
     public Function() : this(
         Environment.GetEnvironmentVariable("CONNECTION_STRING")
             ?? throw new InvalidOperationException("CONNECTION_STRING environment variable is not set."),
-        EventBridgeEventPublisher.FromEnvironment())
+        EventBridgeEventPublisher.FromEnvironment(),
+        DynamoDbFingerprintStore.FromEnvironment())
     {
     }
 
-    public Function(string connectionString, IEventPublisher eventPublisher)
+    public Function(string connectionString, IEventPublisher eventPublisher, IFingerprintStore fingerprintStore)
     {
         _connectionString = connectionString;
         _eventPublisher = eventPublisher;
+        _fingerprintStore = fingerprintStore;
     }
 
     public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
@@ -62,6 +70,10 @@ public class Function
             WorkerLog.Warn(context, WorkerName, "Alert no longer exists, skipping incident creation.",
                 request.EventId, request.OrganizationId, request.CorrelationId, new { alertId = request.AlertId });
             await db.SaveChangesAsync(CancellationToken.None);
+            // Nobody will ever set a real IncidentId for this fingerprint now
+            // — release it so a future alert with the same fingerprint isn't
+            // stuck waiting out the TTL.
+            await _fingerprintStore.ReleaseAsync(request.Fingerprint, CancellationToken.None);
             return;
         }
 
@@ -74,6 +86,7 @@ public class Function
             WorkerLog.Info(context, WorkerName, "Alert already has an incident, skipping.",
                 request.EventId, request.OrganizationId, request.CorrelationId, new { incidentId = alert.IncidentId });
             await db.SaveChangesAsync(CancellationToken.None);
+            await _fingerprintStore.SetIncidentIdAsync(request.Fingerprint, alert.IncidentId.Value, FingerprintTtl, CancellationToken.None);
             return;
         }
 
@@ -94,6 +107,8 @@ public class Function
         alert.IncidentId = incident.Id;
 
         await db.SaveChangesAsync(CancellationToken.None);
+
+        await _fingerprintStore.SetIncidentIdAsync(request.Fingerprint, incident.Id, FingerprintTtl, CancellationToken.None);
 
         WorkerLog.Info(context, WorkerName, "Incident created.",
             request.EventId, request.OrganizationId, request.CorrelationId, new { incidentId = incident.Id });

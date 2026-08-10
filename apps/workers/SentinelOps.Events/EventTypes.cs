@@ -27,4 +27,5 @@ public static class EventSources
     public const string IncidentCreationWorker = "sentinelops.workers.incident-creation";
     public const string ResponderAssignmentWorker = "sentinelops.workers.responder-assignment";
     public const string NotificationWorker = "sentinelops.workers.notification";
+    public const string EscalationWorker = "sentinelops.workers.escalation";
 }

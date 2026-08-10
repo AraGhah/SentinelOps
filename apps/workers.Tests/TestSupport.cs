@@ -75,6 +75,76 @@ public class FakeQueueSender : IQueueSender
     }
 }
 
+public class FakeEscalationStarter : IEscalationStarter
+{
+    public record StartedExecution(string StateMachineArn, string ExecutionName, string InputJson);
+
+    private readonly ConcurrentBag<StartedExecution> _started = [];
+    public IReadOnlyCollection<StartedExecution> Started => _started;
+
+    public Task StartExecutionAsync(string stateMachineArn, string executionName, string inputJson, CancellationToken ct)
+    {
+        _started.Add(new StartedExecution(stateMachineArn, executionName, inputJson));
+        return Task.CompletedTask;
+    }
+}
+
+// In-memory stand-in for DynamoDbFingerprintStore. A single lock around every
+// operation deliberately mirrors DynamoDB's per-item atomicity guarantee (one
+// UpdateItem call is atomic; it doesn't need to be lock-free to be a faithful
+// test double), which is what lets DeduplicationWorkerTests exercise real
+// concurrent-invocation races without a live DynamoDB.
+public class FakeFingerprintStore : IFingerprintStore
+{
+    private class Entry
+    {
+        public string IncidentId = FingerprintRecord.Pending;
+        public long AlertCount;
+    }
+
+    private readonly object _lock = new();
+    private readonly Dictionary<string, Entry> _items = [];
+
+    public Task<FingerprintRecord> TouchAsync(string fingerprint, TimeSpan ttl, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            if (!_items.TryGetValue(fingerprint, out var entry))
+            {
+                entry = new Entry();
+                _items[fingerprint] = entry;
+            }
+
+            entry.AlertCount++;
+            return Task.FromResult(new FingerprintRecord(fingerprint, entry.IncidentId, entry.AlertCount));
+        }
+    }
+
+    public Task SetIncidentIdAsync(string fingerprint, Guid incidentId, TimeSpan ttl, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            if (_items.TryGetValue(fingerprint, out var entry) && entry.IncidentId == FingerprintRecord.Pending)
+            {
+                entry.IncidentId = incidentId.ToString();
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    public Task ReleaseAsync(string fingerprint, CancellationToken ct)
+    {
+        lock (_lock)
+        {
+            if (_items.TryGetValue(fingerprint, out var entry) && entry.IncidentId == FingerprintRecord.Pending)
+            {
+                _items.Remove(fingerprint);
+            }
+            return Task.CompletedTask;
+        }
+    }
+}
+
 // Builds the same SQS message body shape a real EventBridge-rule-targeting-SQS
 // delivery would produce, so tests exercise EventBridgeEnvelope.Parse exactly
 // like production does.
@@ -97,4 +167,51 @@ public static class SqsEventFactory
     }
 
     public static ILambdaContext Context() => new TestLambdaContext();
+}
+
+public class FakeTokenValidator(string? validTokenSub = null) : ITokenValidator
+{
+    public Task<string?> ValidateAsync(string? accessToken, CancellationToken ct) =>
+        Task.FromResult(accessToken is not null && validTokenSub is not null && accessToken == "valid-token" ? validTokenSub : null);
+}
+
+public class FakeConnectionStore : IConnectionStore
+{
+    private readonly ConcurrentDictionary<string, Guid> _connections = new();
+    public IReadOnlyDictionary<string, Guid> Connections => _connections;
+
+    public Task AddAsync(string connectionId, Guid organizationId, TimeSpan ttl, CancellationToken ct)
+    {
+        _connections[connectionId] = organizationId;
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveAsync(string connectionId, CancellationToken ct)
+    {
+        _connections.TryRemove(connectionId, out _);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<string>> GetConnectionIdsAsync(Guid organizationId, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<string>>(
+            _connections.Where(c => c.Value == organizationId).Select(c => c.Key).ToList());
+}
+
+public class FakeConnectionBroadcaster : IConnectionBroadcaster
+{
+    public record PostedMessage(string ConnectionId, byte[] Payload);
+
+    private readonly HashSet<string> _goneConnectionIds;
+    private readonly ConcurrentBag<PostedMessage> _posted = [];
+    public IReadOnlyCollection<PostedMessage> Posted => _posted;
+
+    public FakeConnectionBroadcaster(params string[] goneConnectionIds) => _goneConnectionIds = [.. goneConnectionIds];
+
+    public Task<bool> TryPostAsync(string connectionId, byte[] payload, CancellationToken ct)
+    {
+        if (_goneConnectionIds.Contains(connectionId)) return Task.FromResult(false);
+
+        _posted.Add(new PostedMessage(connectionId, payload));
+        return Task.FromResult(true);
+    }
 }

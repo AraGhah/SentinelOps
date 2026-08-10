@@ -12,6 +12,7 @@
     <PackageReference Include="Amazon.Lambda.Core" Version="2.8.1" />
     <PackageReference Include="Amazon.Lambda.SQSEvents" Version="2.2.0" />
     <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="2.4.5" />
+    <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.100" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SentinelOps.Events\SentinelOps.Events.csproj" />

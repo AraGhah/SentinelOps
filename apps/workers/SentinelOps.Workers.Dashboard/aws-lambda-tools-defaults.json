@@ -1,0 +1,17 @@
+{
+  "Information": [
+    "This file provides default values for the deployment wizard inside Visual Studio and the AWS Lambda commands added to the .NET Core CLI.",
+    "To learn more about the Lambda commands with the .NET Core CLI execute the following command at the command line in the project root directory.",
+    "dotnet lambda help",
+    "All the command line options for the Lambda command can be specified in this file.",
+    "This project publishes as ONE package but is deployed as THREE Lambda functions (see infrastructure-stack.ts): ConnectFunction ($connect route), DisconnectFunction ($disconnect route), and BroadcastFunction (SQS-triggered, pushes incident/alert events to connected dashboards)."
+  ],
+  "profile": "",
+  "region": "",
+  "configuration": "Release",
+  "function-architecture": "x86_64",
+  "function-runtime": "dotnet10",
+  "function-memory-size": 256,
+  "function-timeout": 15,
+  "function-handler": "SentinelOps.Workers.Dashboard::SentinelOps.Workers.Dashboard.ConnectFunction::FunctionHandler"
+}

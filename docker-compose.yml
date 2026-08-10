@@ -27,7 +27,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
       ConnectionStrings__SentinelOpsDb: ${ConnectionStrings__SentinelOpsDb:-Host=postgres;Port=5432;Database=sentinelops;Username=sentinelops;Password=sentinelops}
@@ -43,13 +44,13 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./apps/api:/src
+      - .:/src
 
   web:
     build:
       context: ./apps/web
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://api:5000}
     ports:
       - "${WEB_PORT:-3000}:3000"
     depends_on:

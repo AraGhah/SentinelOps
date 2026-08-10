@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SentinelOps.Api.Domain;
 using SentinelOps.Events;
 using SentinelOps.Workers.Deduplication;
+using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.Tests;
 
@@ -11,49 +12,12 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
 {
     private const string IncidentCreationQueueUrl = "https://sqs.test/incident-creation";
 
-    [Fact]
-    public async Task Handle_MatchingOpenIncidentExists_AttachesAndPublishesIncidentUpdated()
-    {
-        var orgId = Guid.NewGuid();
-        Alert newAlert;
-        Incident existingIncident;
-        await using (var db = fixture.CreateOrgScopedDb(orgId))
-        {
-            var org = TestData.NewOrganization(db);
-            org.Id = orgId;
-            var service = TestData.NewService(db, orgId);
-            var integration = TestData.NewIntegration(db, orgId, service.Id);
-
-            existingIncident = TestData.NewIncident(db, orgId);
-            TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-1", incidentId: existingIncident.Id);
-            newAlert = TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-1");
-
-            await db.SaveChangesAsync();
-        }
-
-        var publisher = new FakeEventPublisher();
-        var queueSender = new FakeQueueSender();
-        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl);
-
-        var detail = new AlertValidatedDetail(
-            Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,
-            newAlert.Id, "ext-1", "datadog", "High latency detected", Severity.High, "production", null);
-        var message = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, detail);
-        await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
-
-        var published = Assert.Single(publisher.Published);
-        Assert.Equal(EventTypes.IncidentUpdated, published.DetailType);
-        Assert.Empty(queueSender.Sent);
-
-        await using var verifyDb = fixture.CreateOrgScopedDb(orgId);
-        var reloadedAlert = await verifyDb.Alerts.FirstAsync(a => a.Id == newAlert.Id);
-        var reloadedIncident = await verifyDb.Incidents.FirstAsync(i => i.Id == existingIncident.Id);
-        Assert.Equal(existingIncident.Id, reloadedAlert.IncidentId);
-        Assert.Equal(2, reloadedIncident.AlertCount);
-    }
+    private static AlertValidatedDetail Detail(Guid orgId, Guid alertId, string title = "High latency detected") =>
+        new(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,
+            alertId, "ext-1", "datadog", title, Severity.High, "production", null);
 
     [Fact]
-    public async Task Handle_NoMatchingIncident_SendsDirectlyToIncidentCreationQueue()
+    public async Task Handle_FirstAlertForFingerprint_SendsDirectlyToIncidentCreationQueue()
     {
         var orgId = Guid.NewGuid();
         Alert alert;
@@ -69,12 +33,9 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
 
         var publisher = new FakeEventPublisher();
         var queueSender = new FakeQueueSender();
-        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl);
+        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, new FakeFingerprintStore());
 
-        var detail = new AlertValidatedDetail(
-            Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,
-            alert.Id, "ext-unique", "datadog", "High latency detected", Severity.High, "production", null);
-        var message = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, detail);
+        var message = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alert.Id));
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
 
         Assert.Empty(publisher.Published);
@@ -84,35 +45,239 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
     }
 
     [Fact]
-    public async Task Handle_ResolvedIncidentAlreadyExists_TreatedAsNoMatch()
+    public async Task Handle_SecondAlertForSameFingerprint_AttachesToIncidentAndPublishesIncidentUpdated()
     {
         var orgId = Guid.NewGuid();
-        Alert newAlert;
+        Alert firstAlert, secondAlert;
+        Guid incidentId;
+        var fingerprintStore = new FakeFingerprintStore();
+        var publisher = new FakeEventPublisher();
+        var queueSender = new FakeQueueSender();
+
         await using (var db = fixture.CreateOrgScopedDb(orgId))
         {
             var org = TestData.NewOrganization(db);
             org.Id = orgId;
             var service = TestData.NewService(db, orgId);
             var integration = TestData.NewIntegration(db, orgId, service.Id);
+            firstAlert = TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-1");
+            secondAlert = TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-2");
+            await db.SaveChangesAsync();
+        }
+
+        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, fingerprintStore);
+
+        // First alert claims the fingerprint and hands off to incident-creation.
+        var firstMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, firstAlert.Id));
+        await function.FunctionHandler(new SQSEvent { Records = [firstMessage] }, SqsEventFactory.Context());
+
+        // Simulate the incident-creation worker having finished: create the
+        // incident directly and resolve the fingerprint the same way it would.
+        await using (var db = fixture.CreateOrgScopedDb(orgId))
+        {
+            var incident = TestData.NewIncident(db, orgId);
+            incidentId = incident.Id;
+            await db.SaveChangesAsync();
+            var reloadedFirstAlert = await db.Alerts.FirstAsync(a => a.Id == firstAlert.Id);
+            reloadedFirstAlert.IncidentId = incidentId;
+            await db.SaveChangesAsync();
+        }
+        var fingerprint = queueSender.Sent.Single().Body;
+        var fingerprintValue = System.Text.Json.JsonDocument.Parse(fingerprint).RootElement.GetProperty("fingerprint").GetString()!;
+        await fingerprintStore.SetIncidentIdAsync(fingerprintValue, incidentId, TimeSpan.FromHours(1), CancellationToken.None);
+
+        // Second alert, same fingerprint (same title/environment/service), attaches.
+        var secondMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, secondAlert.Id));
+        await function.FunctionHandler(new SQSEvent { Records = [secondMessage] }, SqsEventFactory.Context());
+
+        var published = Assert.Single(publisher.Published);
+        Assert.Equal(EventTypes.IncidentUpdated, published.DetailType);
+
+        await using var verifyDb = fixture.CreateOrgScopedDb(orgId);
+        var reloadedSecondAlert = await verifyDb.Alerts.FirstAsync(a => a.Id == secondAlert.Id);
+        var reloadedIncident = await verifyDb.Incidents.FirstAsync(i => i.Id == incidentId);
+        Assert.Equal(incidentId, reloadedSecondAlert.IncidentId);
+        Assert.Equal(2, reloadedIncident.AlertCount);
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateAlert_ReopensResolvedIncident()
+    {
+        var orgId = Guid.NewGuid();
+        Alert newAlert;
+        Guid incidentId;
+        Guid serviceId;
+        var fingerprintStore = new FakeFingerprintStore();
+        await using (var db = fixture.CreateOrgScopedDb(orgId))
+        {
+            var org = TestData.NewOrganization(db);
+            org.Id = orgId;
+            var service = TestData.NewService(db, orgId);
+            serviceId = service.Id;
+            var integration = TestData.NewIntegration(db, orgId, service.Id);
 
             var resolvedIncident = TestData.NewIncident(db, orgId, status: IncidentStatus.Resolved);
-            TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-resolved", incidentId: resolvedIncident.Id);
-            newAlert = TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-resolved");
-
+            resolvedIncident.ResolvedAtUtc = DateTimeOffset.UtcNow;
+            incidentId = resolvedIncident.Id;
+            newAlert = TestData.NewAlert(db, orgId, integration.Id, externalId: "ext-new");
             await db.SaveChangesAsync();
         }
 
         var publisher = new FakeEventPublisher();
         var queueSender = new FakeQueueSender();
-        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl);
+        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, fingerprintStore);
 
-        var detail = new AlertValidatedDetail(
-            Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,
-            newAlert.Id, "ext-resolved", "datadog", "High latency detected", Severity.High, "production", null);
+        var detail = Detail(orgId, newAlert.Id);
+        var errorCode = AlertFingerprint.ExtractErrorCode(null);
+        var fingerprint = AlertFingerprint.Compute(orgId, detail.Title, errorCode, serviceId, detail.Environment);
+        await fingerprintStore.TouchAsync(fingerprint, TimeSpan.FromHours(1), CancellationToken.None);
+        await fingerprintStore.SetIncidentIdAsync(fingerprint, incidentId, TimeSpan.FromHours(1), CancellationToken.None);
+
         var message = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, detail);
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
 
+        Assert.Empty(queueSender.Sent);
+        Assert.Contains(publisher.Published, p => p.DetailType == EventTypes.IncidentUpdated
+            && ((IncidentUpdatedDetail)p.Detail).Field == "Status" && ((IncidentUpdatedDetail)p.Detail).NewValue == "Reopened");
+
+        await using var verifyDb = fixture.CreateOrgScopedDb(orgId);
+        var incident = await verifyDb.Incidents.FirstAsync(i => i.Id == incidentId);
+        Assert.Equal(IncidentStatus.Reopened, incident.Status);
+        Assert.Null(incident.ResolvedAtUtc);
+        Assert.Equal(2, incident.AlertCount);
+    }
+
+    [Fact]
+    public async Task Handle_ConcurrentDuplicateWhileWinnerStillPending_ThrowsForRedelivery()
+    {
+        var orgId = Guid.NewGuid();
+        Alert alert;
+        await using (var db = fixture.CreateOrgScopedDb(orgId))
+        {
+            var org = TestData.NewOrganization(db);
+            org.Id = orgId;
+            var service = TestData.NewService(db, orgId);
+            var integration = TestData.NewIntegration(db, orgId, service.Id);
+            alert = TestData.NewAlert(db, orgId, integration.Id);
+            await db.SaveChangesAsync();
+        }
+
+        var fingerprintStore = new FakeFingerprintStore();
+        var publisher = new FakeEventPublisher();
+        var queueSender = new FakeQueueSender();
+        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, fingerprintStore);
+
+        // First delivery claims the fingerprint (AlertCount becomes 1) and
+        // hands off — nobody has created the incident yet.
+        var firstMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alert.Id));
+        await function.FunctionHandler(new SQSEvent { Records = [firstMessage] }, SqsEventFactory.Context());
+
+        // A concurrent duplicate for the exact same alert (different EventId,
+        // as a real second invocation would have) arrives before the winner's
+        // incident-creation worker has run.
+        var secondMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alert.Id));
+        await Assert.ThrowsAsync<FingerprintPendingException>(
+            () => function.FunctionHandler(new SQSEvent { Records = [secondMessage] }, SqsEventFactory.Context()));
+
         Assert.Empty(publisher.Published);
+    }
+
+    [Fact]
+    public async Task Handle_100SimultaneousIdenticalAlerts_ExactlyOneIsTreatedAsUnique()
+    {
+        var orgId = Guid.NewGuid();
+        var alertIds = new List<Guid>();
+        await using (var db = fixture.CreateOrgScopedDb(orgId))
+        {
+            var org = TestData.NewOrganization(db);
+            org.Id = orgId;
+            var service = TestData.NewService(db, orgId);
+            var integration = TestData.NewIntegration(db, orgId, service.Id);
+            for (var i = 0; i < 100; i++)
+            {
+                alertIds.Add(TestData.NewAlert(db, orgId, integration.Id, externalId: $"ext-{i}").Id);
+            }
+            await db.SaveChangesAsync();
+        }
+
+        var fingerprintStore = new FakeFingerprintStore();
+        var publisher = new FakeEventPublisher();
+        var queueSender = new FakeQueueSender();
+
+        // Every alert shares the same title/environment/service, so they all
+        // hash to the same fingerprint despite being distinct Alert rows —
+        // exercising the DynamoDB-atomic-increment race guard directly, one
+        // Function instance shared across concurrent invocations like Lambda
+        // would reuse a warm instance.
+        var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, fingerprintStore);
+
+        var tasks = alertIds.Select(async alertId =>
+        {
+            var message = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alertId));
+            try
+            {
+                await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
+                return true;
+            }
+            catch (FingerprintPendingException)
+            {
+                return false;
+            }
+        });
+        var results = await Task.WhenAll(tasks);
+
+        // Exactly one alert observes AlertCount == 1 and hands off to
+        // incident-creation; every other concurrent arrival sees Pending and
+        // throws for redelivery (no incident exists yet to attach to).
         Assert.Single(queueSender.Sent);
+        Assert.Equal(1, results.Count(succeeded => succeeded));
+        Assert.Equal(99, results.Count(succeeded => !succeeded));
+    }
+
+    [Fact]
+    public async Task Handle_SameFingerprintDifferentOrganizations_DoNotShareAnIncident()
+    {
+        var orgA = Guid.NewGuid();
+        var orgB = Guid.NewGuid();
+        Alert alertA, alertB;
+
+        await using (var db = fixture.CreateOrgScopedDb(orgA))
+        {
+            var org = TestData.NewOrganization(db);
+            org.Id = orgA;
+            var service = TestData.NewService(db, orgA);
+            var integration = TestData.NewIntegration(db, orgA, service.Id);
+            alertA = TestData.NewAlert(db, orgA, integration.Id, externalId: "ext-a");
+            await db.SaveChangesAsync();
+        }
+        await using (var db = fixture.CreateOrgScopedDb(orgB))
+        {
+            var org = TestData.NewOrganization(db);
+            org.Id = orgB;
+            var service = TestData.NewService(db, orgB);
+            var integration = TestData.NewIntegration(db, orgB, service.Id);
+            alertB = TestData.NewAlert(db, orgB, integration.Id, externalId: "ext-b");
+            await db.SaveChangesAsync();
+        }
+
+        var fingerprintStore = new FakeFingerprintStore();
+        var publisher = new FakeEventPublisher();
+        var queueSenderA = new FakeQueueSender();
+        var queueSenderB = new FakeQueueSender();
+        var functionA = new Function(fixture.ConnectionString, publisher, queueSenderA, IncidentCreationQueueUrl, fingerprintStore);
+        var functionB = new Function(fixture.ConnectionString, publisher, queueSenderB, IncidentCreationQueueUrl, fingerprintStore);
+
+        // Identical title/environment, but different organizations, so the
+        // fingerprint hash (which folds in OrganizationId) must differ.
+        var messageA = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgA, alertA.Id));
+        var messageB = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgB, alertB.Id));
+
+        await functionA.FunctionHandler(new SQSEvent { Records = [messageA] }, SqsEventFactory.Context());
+        await functionB.FunctionHandler(new SQSEvent { Records = [messageB] }, SqsEventFactory.Context());
+
+        // Both are treated as unique — neither throws, and both hand off
+        // independently rather than one attaching to the other's incident.
+        Assert.Single(queueSenderA.Sent);
+        Assert.Single(queueSenderB.Sent);
     }
 }

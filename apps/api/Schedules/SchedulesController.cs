@@ -214,9 +214,9 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
         return NoContent();
     }
 
-    // A simple query, not a scheduling engine: checks for an active override first,
-    // otherwise matches the base weekly rotation for the schedule's time zone "now",
-    // handling the overnight case where EndTimeLocal <= StartTimeLocal.
+    // Delegates to OnCallResolver (also used by the ResponderAssignment
+    // worker) so "who's on call" answers the same way here as it does when
+    // the system actually assigns an incident.
     [HttpGet("{scheduleId:guid}/on-call")]
     [Authorize(Policy = OrgPolicies.Viewer)]
     public async Task<ActionResult<OnCallResponse>> GetOnCall(Guid orgId, Guid scheduleId, CancellationToken ct)
@@ -237,39 +237,12 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
             return Ok(new OnCallResponse(activeOverride.ResponderUserId, "override"));
         }
 
-        var timeZone = TimeZoneInfo.FindSystemTimeZoneById(schedule.TimeZoneId);
-        var localNow = TimeZoneInfo.ConvertTime(nowUtc, timeZone);
-        var localDayOfWeek = (int)localNow.DayOfWeek;
-        var localTime = TimeOnly.FromDateTime(localNow.DateTime);
-
         var rotations = await db.ScheduleRotations
-            .Where(r => r.OrganizationId == orgId && r.ScheduleId == scheduleId
-                && (r.EffectiveFromUtc == null || r.EffectiveFromUtc <= nowUtc)
-                && (r.EffectiveToUtc == null || nowUtc < r.EffectiveToUtc))
+            .Where(r => r.OrganizationId == orgId && r.ScheduleId == scheduleId)
             .ToListAsync(ct);
 
-        var match = rotations
-            .Where(r => IsActiveAt(r, localDayOfWeek, localTime))
-            .OrderBy(r => r.IsBackup)
-            .FirstOrDefault();
-
-        return Ok(new OnCallResponse(match?.ResponderUserId, match is null ? "none" : "rotation"));
-    }
-
-    private static bool IsActiveAt(ScheduleRotation rotation, int localDayOfWeek, TimeOnly localTime)
-    {
-        var previousDay = (localDayOfWeek + 6) % 7;
-
-        if (rotation.EndTimeLocal > rotation.StartTimeLocal)
-        {
-            return rotation.DayOfWeek == localDayOfWeek
-                && localTime >= rotation.StartTimeLocal && localTime < rotation.EndTimeLocal;
-        }
-
-        // Overnight shift: active either later on its start day, or earlier on the
-        // following day before it ends.
-        return (rotation.DayOfWeek == localDayOfWeek && localTime >= rotation.StartTimeLocal)
-            || (rotation.DayOfWeek == previousDay && localTime < rotation.EndTimeLocal);
+        var responderId = OnCallResolver.Resolve(schedule, rotations, [], nowUtc);
+        return Ok(new OnCallResponse(responderId, responderId is null ? "none" : "rotation"));
     }
 
     private Task<Schedule?> Find(Guid orgId, Guid scheduleId, CancellationToken ct) =>

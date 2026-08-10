@@ -184,6 +184,15 @@ public class EscalationPoliciesController(SentinelOpsDbContext db, IAuditLogger 
         return NoContent();
     }
 
+    // "Validate escalation loops": levels only ever target individual users
+    // (EscalationLevelTarget.UserId — see EscalationPolicy.cs, there's no
+    // Team entity or policy-to-policy reference yet), so there's no graph
+    // edge a policy could form a cycle through at CRUD time. The runtime
+    // equivalent — never re-notifying an already-notified level, and
+    // stopping once every level plus the fallback administrator has been
+    // tried — is enforced by SentinelOps.Workers.Escalation's AdvanceLevel
+    // action, which only ever looks at levels with Order strictly greater
+    // than the one just notified.
     private static string? ValidateLevels(List<EscalationLevelRequest> levels)
     {
         if (levels.Count == 0) return "A policy must have at least one escalation level.";

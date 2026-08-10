@@ -28,9 +28,14 @@ public class IncidentCreationWorkerTests(WorkerTestFixture fixture)
         }
 
         var publisher = new FakeEventPublisher();
-        var function = new Function(fixture.ConnectionString, publisher);
+        var fingerprintStore = new FakeFingerprintStore();
+        // Mirrors what the dedup worker's Touch already did before handing off
+        // — the fingerprint item exists and is Pending until this worker
+        // resolves it to the real incident id.
+        await fingerprintStore.TouchAsync("fp-test", TimeSpan.FromHours(1), CancellationToken.None);
+        var function = new Function(fixture.ConnectionString, publisher, fingerprintStore);
 
-        var request = new IncidentCreationRequest(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, alert.Id);
+        var request = new IncidentCreationRequest(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, alert.Id, "fp-test");
         var message = new SQSEvent.SQSMessage { Body = JsonSerializer.Serialize(request, EventJson.Options) };
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
 
@@ -45,6 +50,9 @@ public class IncidentCreationWorkerTests(WorkerTestFixture fixture)
         Assert.NotNull(reloadedAlert.IncidentId);
         var incident = await verifyDb.Incidents.FirstAsync(i => i.Id == reloadedAlert.IncidentId);
         Assert.Equal(IncidentStatus.Triggered, incident.Status);
+
+        var resolved = await fingerprintStore.TouchAsync("fp-test", TimeSpan.FromHours(1), CancellationToken.None);
+        Assert.Equal(incident.Id.ToString(), resolved.IncidentId);
     }
 
     [Fact]
@@ -64,9 +72,10 @@ public class IncidentCreationWorkerTests(WorkerTestFixture fixture)
         }
 
         var publisher = new FakeEventPublisher();
-        var function = new Function(fixture.ConnectionString, publisher);
+        var fingerprintStore = new FakeFingerprintStore();
+        var function = new Function(fixture.ConnectionString, publisher, fingerprintStore);
 
-        var request = new IncidentCreationRequest(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, alert.Id);
+        var request = new IncidentCreationRequest(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, alert.Id, "fp-test");
         var message = new SQSEvent.SQSMessage { Body = JsonSerializer.Serialize(request, EventJson.Options) };
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
 
@@ -92,9 +101,10 @@ public class IncidentCreationWorkerTests(WorkerTestFixture fixture)
         }
 
         var publisher = new FakeEventPublisher();
-        var function = new Function(fixture.ConnectionString, publisher);
+        var fingerprintStore = new FakeFingerprintStore();
+        var function = new Function(fixture.ConnectionString, publisher, fingerprintStore);
 
-        var request = new IncidentCreationRequest(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, alert.Id);
+        var request = new IncidentCreationRequest(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, alert.Id, "fp-test");
         var message = new SQSEvent.SQSMessage { Body = JsonSerializer.Serialize(request, EventJson.Options) };
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());

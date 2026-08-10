@@ -1,0 +1,17 @@
+{
+  "Information": [
+    "This file provides default values for the deployment wizard inside Visual Studio and the AWS Lambda commands added to the .NET Core CLI.",
+    "To learn more about the Lambda commands with the .NET Core CLI execute the following command at the command line in the project root directory.",
+    "dotnet lambda help",
+    "All the command line options for the Lambda command can be specified in this file.",
+    "This project publishes as ONE package but is deployed as TWO Lambda functions (see infrastructure-stack.ts) — EscalationFunction (Step Functions task target) and EscalationRestartFunction (SQS-triggered, on incident.updated/Reopened). The handler below is the default for `dotnet lambda deploy-function`; the restart function is deployed with a different --function-handler pointing at RestartFunction::FunctionHandler."
+  ],
+  "profile": "",
+  "region": "",
+  "configuration": "Release",
+  "function-architecture": "x86_64",
+  "function-runtime": "dotnet10",
+  "function-memory-size": 512,
+  "function-timeout": 30,
+  "function-handler": "SentinelOps.Workers.Escalation::SentinelOps.Workers.Escalation.EscalationFunction::FunctionHandler"
+}

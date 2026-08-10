@@ -1,18 +1,21 @@
 namespace SentinelOps.Workers.Notification;
 
-// No email/SMS/Slack integration exists anywhere in this repo yet, so this is a
-// documented seam rather than a real integration: swap LoggingNotificationChannel
-// for a real SES/SNS/Twilio-backed implementation when one is built, without
-// touching Function.cs.
+// SES is the only real channel today (see SesNotificationChannel) — SMS/Slack/
+// Teams are a documented future seam (section 18's "Advanced" tier), swappable
+// without touching Function.cs since they'd all implement this same interface.
 public interface INotificationChannel
 {
-    Task<NotificationSendResult> SendAsync(Guid recipientUserId, string channel, string message, CancellationToken ct);
+    Task<NotificationSendResult> SendAsync(string recipientEmail, string subject, string htmlBody, string textBody, CancellationToken ct);
 }
 
-public record NotificationSendResult(bool Success, string? FailureReason);
+// IsTransient distinguishes "worth retrying" (throttling, a momentary AWS
+// error) from "will never succeed as-is" (rejected content, unverified
+// sender) — Function.cs uses it to decide whether to let SQS redeliver or
+// record a permanent failure. Meaningless when Success is true.
+public record NotificationSendResult(bool Success, bool IsTransient, string? FailureReason);
 
 public class LoggingNotificationChannel : INotificationChannel
 {
-    public Task<NotificationSendResult> SendAsync(Guid recipientUserId, string channel, string message, CancellationToken ct) =>
-        Task.FromResult(new NotificationSendResult(Success: true, FailureReason: null));
+    public Task<NotificationSendResult> SendAsync(string recipientEmail, string subject, string htmlBody, string textBody, CancellationToken ct) =>
+        Task.FromResult(new NotificationSendResult(Success: true, IsTransient: false, FailureReason: null));
 }

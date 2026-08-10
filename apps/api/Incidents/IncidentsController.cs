@@ -35,7 +35,7 @@ public class IncidentsController(
             .OrderByDescending(i => i.CreatedAtUtc)
             .Select(i => new IncidentResponse(
                 i.Id, i.Title, i.Description, i.Severity, i.ServiceId, i.AssignedResponderUserId, i.Status,
-                i.AlertCount, i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc))
+                i.AlertCount, i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc, i.CurrentEscalationLevel))
             .ToPagedResultAsync(paging, ct);
 
         return Ok(result);
@@ -146,6 +146,10 @@ public class IncidentsController(
         else if (request.Status == IncidentStatus.Reopened)
         {
             incident.ResolvedAtUtc = null;
+            // A reopened incident restarts escalation from the top (see the
+            // Escalation worker's Restart action, triggered off the
+            // IncidentUpdated/"Status"->"Reopened" event published below).
+            incident.CurrentEscalationLevel = null;
         }
 
         db.IncidentStatusHistories.Add(new IncidentStatusHistory
@@ -159,6 +163,28 @@ public class IncidentsController(
             Note = request.Note,
             ChangedAtUtc = DateTimeOffset.UtcNow,
         });
+
+        // Let the resolved responder know, same event chain every other
+        // notification uses (see SentinelOps.Workers.Notification). Created
+        // in the same SaveChangesAsync as the status change below rather
+        // than by a dedicated worker reacting to `incident.resolved` — there
+        // isn't enough other work here to justify one.
+        Notification? resolutionNotification = null;
+        if (request.Status == IncidentStatus.Resolved && incident.AssignedResponderUserId is not null)
+        {
+            resolutionNotification = new Notification
+            {
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                IncidentId = incident.Id,
+                RecipientUserId = incident.AssignedResponderUserId.Value,
+                Channel = "email",
+                Kind = NotificationKind.IncidentResolved,
+                Status = NotificationStatus.Requested,
+                RequestedAtUtc = DateTimeOffset.UtcNow,
+            };
+            db.Notifications.Add(resolutionNotification);
+        }
 
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync(
@@ -174,6 +200,27 @@ public class IncidentsController(
         {
             await eventPublisher.PublishAsync(EventSources.Api, EventTypes.IncidentResolved,
                 new IncidentResolvedDetail(Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, incident.Id, actor.Id),
+                ct);
+
+            if (resolutionNotification is not null)
+            {
+                await eventPublisher.PublishAsync(EventSources.Api, EventTypes.NotificationRequested,
+                    new NotificationRequestedDetail(
+                        Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,
+                        resolutionNotification.Id, incident.Id, resolutionNotification.RecipientUserId, resolutionNotification.Channel),
+                    ct);
+            }
+        }
+        else if (request.Status == IncidentStatus.Reopened)
+        {
+            // Same event shape the deduplication worker publishes when a
+            // duplicate alert reopens a resolved incident (see
+            // SentinelOps.Workers.Deduplication) — one consistent signal for
+            // "an incident was reopened" regardless of which path caused it.
+            await eventPublisher.PublishAsync(EventSources.Api, EventTypes.IncidentUpdated,
+                new IncidentUpdatedDetail(
+                    Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,
+                    incident.Id, "Status", IncidentStatus.Resolved.ToString(), IncidentStatus.Reopened.ToString()),
                 ct);
         }
 
@@ -332,5 +379,5 @@ public class IncidentsController(
 
     private static IncidentResponse ToResponse(Incident i) => new(
         i.Id, i.Title, i.Description, i.Severity, i.ServiceId, i.AssignedResponderUserId, i.Status, i.AlertCount,
-        i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc);
+        i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc, i.CurrentEscalationLevel);
 }

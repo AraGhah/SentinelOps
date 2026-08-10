@@ -68,6 +68,57 @@ public class SchedulesTests(ApiTestFixture fixture)
         Assert.Equal("rotation", onCall.Source);
     }
 
+    [Fact]
+    public async Task OnCall_BackupRotationCovers_WhenNoPrimaryIsActive()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Backup Org");
+        var schedule = await CreateScheduleAsync(client, org.Id);
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var localNow = TimeZoneInfo.ConvertTime(nowUtc, TimeZoneInfo.Utc);
+        var backupResponder = Guid.NewGuid();
+
+        await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/schedules/{schedule.Id}/rotations",
+            new CreateRotationRequest(
+                backupResponder, (int)localNow.DayOfWeek, new TimeOnly(0, 0), new TimeOnly(23, 59), null, null, true));
+
+        var onCall = await client.GetFromJsonAsync<OnCallResponse>(
+            $"/api/v1/organizations/{org.Id}/schedules/{schedule.Id}/on-call", Json.Options);
+
+        Assert.Equal(backupResponder, onCall!.ResponderUserId);
+        Assert.Equal("rotation", onCall.Source);
+    }
+
+    [Fact]
+    public async Task OnCall_OverlappingRotations_ReturnsADeterministicResponder()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Overlap Org");
+        var schedule = await CreateScheduleAsync(client, org.Id);
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var localNow = TimeZoneInfo.ConvertTime(nowUtc, TimeZoneInfo.Utc);
+        var responderA = Guid.NewGuid();
+        var responderB = Guid.NewGuid();
+
+        await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/schedules/{schedule.Id}/rotations",
+            new CreateRotationRequest(responderA, (int)localNow.DayOfWeek, new TimeOnly(0, 0), new TimeOnly(23, 59), null, null, false));
+        await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/schedules/{schedule.Id}/rotations",
+            new CreateRotationRequest(responderB, (int)localNow.DayOfWeek, new TimeOnly(0, 0), new TimeOnly(23, 59), null, null, false));
+
+        var onCall = await client.GetFromJsonAsync<OnCallResponse>(
+            $"/api/v1/organizations/{org.Id}/schedules/{schedule.Id}/on-call", Json.Options);
+
+        Assert.True(onCall!.ResponderUserId == responderA || onCall.ResponderUserId == responderB);
+        Assert.Equal("rotation", onCall.Source);
+    }
+
     private static async Task<ScheduleResponse> CreateScheduleAsync(HttpClient client, Guid orgId)
     {
         var response = await client.PostAsJsonAsync(

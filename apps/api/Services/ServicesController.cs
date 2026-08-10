@@ -198,7 +198,7 @@ public class ServicesController(SentinelOpsDbContext db, IAuditLogger auditLogge
             .OrderByDescending(i => i.CreatedAtUtc)
             .Select(i => new IncidentResponse(
                 i.Id, i.Title, i.Description, i.Severity, i.ServiceId, i.AssignedResponderUserId, i.Status,
-                i.AlertCount, i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc))
+                i.AlertCount, i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc, i.CurrentEscalationLevel))
             .ToListAsync(ct);
 
         return Ok(incidents);

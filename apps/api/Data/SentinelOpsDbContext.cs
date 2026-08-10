@@ -34,6 +34,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<ProcessedWorkerEvent> ProcessedWorkerEvents => Set<ProcessedWorkerEvent>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationPreference> NotificationPreferences => Set<NotificationPreference>();
     public DbSet<AnalyticsEvent> AnalyticsEvents => Set<AnalyticsEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -373,6 +374,14 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
 
             b.HasOne(n => n.Incident).WithMany().HasForeignKey(n => n.IncidentId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NotificationPreference>(b =>
+        {
+            b.HasKey(p => p.Id);
+            b.Property(p => p.TimeZoneId).HasMaxLength(100);
+            b.HasIndex(p => new { p.OrganizationId, p.UserId }).IsUnique();
+            b.HasQueryFilter(p => p.OrganizationId == currentOrganization.OrganizationId);
         });
 
         modelBuilder.Entity<AnalyticsEvent>(b =>

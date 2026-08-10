@@ -75,4 +75,4 @@ public record NotificationFailedDetail(
 // this edge specifically bypasses EventBridge (avoids a create-incident race
 // between two independent listeners of `alert.validated`).
 public record IncidentCreationRequest(
-    Guid EventId, Guid OrganizationId, Guid CorrelationId, DateTimeOffset OccurredAtUtc, Guid AlertId);
+    Guid EventId, Guid OrganizationId, Guid CorrelationId, DateTimeOffset OccurredAtUtc, Guid AlertId, string Fingerprint);

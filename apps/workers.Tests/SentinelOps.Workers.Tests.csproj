@@ -37,6 +37,8 @@
     <ProjectReference Include="..\workers\SentinelOps.Workers.Notification\SentinelOps.Workers.Notification.csproj" />
     <ProjectReference Include="..\workers\SentinelOps.Workers.Analytics\SentinelOps.Workers.Analytics.csproj" />
     <ProjectReference Include="..\workers\SentinelOps.Workers.AuditLog\SentinelOps.Workers.AuditLog.csproj" />
+    <ProjectReference Include="..\workers\SentinelOps.Workers.Escalation\SentinelOps.Workers.Escalation.csproj" />
+    <ProjectReference Include="..\workers\SentinelOps.Workers.Dashboard\SentinelOps.Workers.Dashboard.csproj" />
   </ItemGroup>
 
 </Project>

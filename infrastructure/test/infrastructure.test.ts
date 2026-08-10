@@ -15,6 +15,8 @@ const WORKER_NAMES = [
   'Notification',
   'Analytics',
   'AuditLog',
+  'Escalation',
+  'Dashboard',
 ];
 
 beforeAll(() => {
@@ -41,8 +43,11 @@ describe('SentinelOps event-driven infrastructure', () => {
 
   it('creates one SQS queue + DLQ per worker, each wired to a redrive policy', () => {
     const template = synth();
-    // 7 worker queues + 7 DLQs.
-    template.resourceCountIs('AWS::SQS::Queue', 14);
+    // 7 original worker queues + EscalationRestart (Escalation's other half,
+    // EscalationFunction, is a direct Step Functions task target with no
+    // queue of its own) + DashboardBroadcast (Dashboard's Connect/Disconnect
+    // halves are API Gateway route targets with no queue) = 9 worker queues + 9 DLQs.
+    template.resourceCountIs('AWS::SQS::Queue', 18);
 
     for (const name of WORKER_NAMES) {
       template.hasResourceProperties('AWS::SQS::Queue', {
@@ -55,12 +60,12 @@ describe('SentinelOps event-driven infrastructure', () => {
     const withRedrive = Object.values(queues).filter(
       (q: any) => q.Properties?.RedrivePolicy?.deadLetterTargetArn !== undefined,
     );
-    expect(withRedrive).toHaveLength(7);
+    expect(withRedrive).toHaveLength(9);
   });
 
-  it('creates 7 Lambda functions, one per worker, on the dotnet10 runtime', () => {
+  it('creates 12 Lambda functions (7 workers + Escalation x2 + Dashboard x3), on the dotnet10 runtime', () => {
     const template = synth();
-    template.resourceCountIs('AWS::Lambda::Function', 7);
+    template.resourceCountIs('AWS::Lambda::Function', 12);
     template.allResourcesProperties('AWS::Lambda::Function', {
       Runtime: 'dotnet10',
     });
@@ -138,6 +143,103 @@ describe('SentinelOps event-driven infrastructure', () => {
         Statement: Match.arrayWith([
           Match.objectLike({
             Action: Match.arrayWith([Match.stringLikeRegexp('sqs:SendMessage')]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it('creates the escalation state machine with wait/check/advance/choice states and a failure path', () => {
+    const template = synth();
+    template.resourceCountIs('AWS::StepFunctions::StateMachine', 1);
+
+    const machines = Object.values(template.findResources('AWS::StepFunctions::StateMachine'));
+    const definition = JSON.stringify((machines[0] as any).Properties.DefinitionString);
+
+    for (const stateName of [
+      'WaitForAck', 'CheckIncidentStatus', 'IsAcknowledgedOrResolved', 'AdvanceEscalationLevel',
+      'IsEscalationExhausted', 'StoppedAcknowledgedOrResolved', 'StoppedEscalationExhausted',
+      'RecordEscalationFailure', 'EscalationWorkflowFailed',
+    ]) {
+      expect(definition.includes(stateName)).toBe(true);
+    }
+  });
+
+  it('routes incident.updated/Status=Reopened to the escalation-restart queue, not the general fan-out', () => {
+    const template = synth();
+    const rules = template.findResources('AWS::Events::Rule');
+    const reopenedRule = Object.values(rules).find(
+      (r: any) => JSON.stringify(r.Properties?.EventPattern) === JSON.stringify({
+        'detail-type': ['incident.updated'],
+        detail: { field: ['Status'], newValue: ['Reopened'] },
+      }),
+    );
+    expect(reopenedRule).toBeDefined();
+  });
+
+  it('grants both the responder-assignment and escalation-restart functions permission to start the state machine', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: 'states:StartExecution',
+          }),
+        ]),
+      },
+    });
+  });
+
+  it('creates a domain-verified SES email identity and grants the notification function send permission', () => {
+    const template = synth();
+    template.resourceCountIs('AWS::SES::EmailIdentity', 1);
+
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: Match.arrayWith([Match.stringLikeRegexp('ses:SendEmail')]),
+          }),
+        ]),
+      },
+    });
+  });
+
+  it('creates the dashboard WebSocket API with $connect/$disconnect routes and a connections table', () => {
+    const template = synth();
+    template.resourceCountIs('AWS::ApiGatewayV2::Api', 1);
+    template.hasResourceProperties('AWS::ApiGatewayV2::Api', { ProtocolType: 'WEBSOCKET' });
+
+    const routes = Object.values(template.findResources('AWS::ApiGatewayV2::Route'));
+    const routeKeys = routes.map((r: any) => r.Properties?.RouteKey);
+    expect(routeKeys).toEqual(expect.arrayContaining(['$connect', '$disconnect']));
+
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'sentinelops-dashboard-connections',
+      KeySchema: Match.arrayWith([Match.objectLike({ AttributeName: 'ConnectionId', KeyType: 'HASH' })]),
+      GlobalSecondaryIndexes: Match.arrayWith([
+        Match.objectLike({ IndexName: 'OrganizationId-index' }),
+      ]),
+    });
+  });
+
+  it('routes incident.created/updated/resolved and alert.received to the dashboard-broadcast queue', () => {
+    const template = synth();
+    const rules = Object.values(template.findResources('AWS::Events::Rule'));
+    const dashboardRule = rules.find(
+      (r: any) => JSON.stringify(r.Properties?.EventPattern?.['detail-type']) ===
+        JSON.stringify(['incident.created', 'incident.updated', 'incident.resolved', 'alert.received']),
+    );
+    expect(dashboardRule).toBeDefined();
+  });
+
+  it('grants the broadcast function permission to manage WebSocket connections', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: 'execute-api:ManageConnections',
           }),
         ]),
       },

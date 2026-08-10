@@ -22,7 +22,11 @@ public record UpdateIncidentStatusRequest(IncidentStatus Status, string? Note);
 public record IncidentResponse(
     Guid Id, string Title, string? Description, IncidentSeverity Severity, Guid? ServiceId,
     Guid? AssignedResponderUserId, IncidentStatus Status, int AlertCount, DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? AcknowledgedAtUtc, DateTimeOffset? ResolvedAtUtc);
+    DateTimeOffset? AcknowledgedAtUtc, DateTimeOffset? ResolvedAtUtc,
+    // Highest EscalationLevel.Order the escalation state machine has notified
+    // so far for this incident; null if no escalation policy has ever
+    // applied to it. See SentinelOps.Workers.Escalation.
+    int? CurrentEscalationLevel);
 
 public record IncidentFilters(IncidentStatus? Status, IncidentSeverity? Severity, Guid? ServiceId, Guid? AssignedResponderUserId);
 

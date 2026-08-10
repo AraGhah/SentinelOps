@@ -38,3 +38,8 @@ public record CreateCommentRequest([Required] string Body, bool IsInternal);
 public record CommentResponse(Guid Id, Guid AuthorUserId, string Body, bool IsInternal, DateTimeOffset CreatedAtUtc);
 
 public record AddTagRequest([Required, MaxLength(100)] string Tag);
+
+// ActorUserId is null for automated system actions (assignment, escalation,
+// notification delivery) — the timeline UI renders those as "System".
+public record IncidentEventResponse(
+    Guid Id, IncidentEventType EventType, Guid? ActorUserId, string? Summary, string? Details, DateTimeOffset OccurredAtUtc);

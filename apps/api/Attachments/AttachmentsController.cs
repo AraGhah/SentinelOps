@@ -11,7 +11,8 @@ namespace SentinelOps.Api.Attachments;
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/incidents/{incidentId:guid}/attachments")]
-public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger)
+public class AttachmentsController(
+    SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger, IAttachmentStorageService storage)
     : ControllerBase
 {
     [HttpGet]
@@ -22,7 +23,7 @@ public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService 
             .Where(a => a.OrganizationId == orgId && a.IncidentId == incidentId)
             .OrderByDescending(a => a.CreatedAtUtc)
             .Select(a => new AttachmentResponse(
-                a.Id, a.IncidentId, a.FileName, a.ContentType, a.SizeBytes, a.StorageKey, a.UploadedByUserId, a.CreatedAtUtc))
+                a.Id, a.IncidentId, a.FileName, a.ContentType, a.SizeBytes, a.StorageKey, a.UploadedByUserId, a.ScanStatus, a.CreatedAtUtc))
             .ToListAsync(ct);
 
         return Ok(attachments);
@@ -38,6 +39,33 @@ public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService 
         return Ok(ToResponse(attachment));
     }
 
+    // Step 1 of the upload flow: mint a presigned PUT URL scoped to this
+    // org/incident, without creating any row yet — the row is only created
+    // once the client confirms the upload via Create below.
+    [HttpPost("upload-url")]
+    [Authorize(Policy = OrgPolicies.Responder)]
+    public async Task<ActionResult<UploadUrlResponse>> CreateUploadUrl(
+        Guid orgId, Guid incidentId, CreateUploadUrlRequest request, CancellationToken ct)
+    {
+        var incidentExists = await db.Incidents.AnyAsync(i => i.OrganizationId == orgId && i.Id == incidentId, ct);
+        if (!incidentExists) return NotFound();
+
+        if (!AttachmentPolicy.IsAllowed(request.ContentType, request.SizeBytes))
+        {
+            return Problem(
+                title: "Attachment rejected",
+                detail: $"Content type '{request.ContentType}' or size {request.SizeBytes} bytes is not allowed.",
+                statusCode: 400);
+        }
+
+        var upload = storage.CreateUploadUrl(orgId, incidentId, request.FileName, request.ContentType);
+        return Ok(new UploadUrlResponse(upload.StorageKey, upload.UploadUrl, upload.ExpiresAtUtc));
+    }
+
+    // Step 2: the client has PUT the bytes to the presigned URL; this records
+    // the metadata row. ScanStatus starts Pending — GuardDuty Malware
+    // Protection scans the object on upload and SentinelOps.Workers.AttachmentScan
+    // updates it once a verdict is in (see infrastructure-stack.ts).
     [HttpPost]
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<AttachmentResponse>> Create(
@@ -45,6 +73,22 @@ public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService 
     {
         var incidentExists = await db.Incidents.AnyAsync(i => i.OrganizationId == orgId && i.Id == incidentId, ct);
         if (!incidentExists) return NotFound();
+
+        if (!AttachmentPolicy.IsAllowed(request.ContentType, request.SizeBytes))
+        {
+            return Problem(
+                title: "Attachment rejected",
+                detail: $"Content type '{request.ContentType}' or size {request.SizeBytes} bytes is not allowed.",
+                statusCode: 400);
+        }
+
+        // Ownership validation: the key must be one this org/incident's own
+        // upload-url step minted, not a key borrowed from another tenant or
+        // another incident's attachments.
+        if (!request.StorageKey.StartsWith(AttachmentPolicy.StorageKeyPrefix(orgId, incidentId), StringComparison.Ordinal))
+        {
+            return Problem(title: "Attachment rejected", detail: "Storage key does not belong to this incident.", statusCode: 400);
+        }
 
         var actor = await currentUserService.GetOrProvisionAsync(ct);
         var attachment = new Attachment
@@ -57,14 +101,38 @@ public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService 
             SizeBytes = request.SizeBytes,
             StorageKey = request.StorageKey,
             UploadedByUserId = actor.Id,
+            ScanStatus = AttachmentScanStatus.Pending,
             CreatedAtUtc = DateTimeOffset.UtcNow,
         };
 
         db.Attachments.Add(attachment);
+        IncidentTimeline.Record(db, orgId, incidentId, IncidentEventType.AttachmentAdded, actor.Id, attachment.FileName);
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync("attachment.created", nameof(Attachment), attachment.Id, new { attachment.FileName }, ct);
 
         return Ok(ToResponse(attachment));
+    }
+
+    [HttpGet("{attachmentId:guid}/download-url")]
+    [Authorize(Policy = OrgPolicies.Viewer)]
+    public async Task<ActionResult<DownloadUrlResponse>> CreateDownloadUrl(
+        Guid orgId, Guid incidentId, Guid attachmentId, CancellationToken ct)
+    {
+        var attachment = await Find(orgId, incidentId, attachmentId, ct);
+        if (attachment is null) return NotFound();
+
+        if (attachment.ScanStatus != AttachmentScanStatus.Clean)
+        {
+            return Problem(
+                title: "Attachment not available",
+                detail: $"This attachment's malware scan status is '{attachment.ScanStatus}'.",
+                statusCode: 409);
+        }
+
+        var (url, expiresAtUtc) = storage.CreateDownloadUrl(attachment.StorageKey, attachment.FileName);
+        await auditLogger.LogAsync("attachment.downloaded", nameof(Attachment), attachment.Id, null, ct);
+
+        return Ok(new DownloadUrlResponse(url, expiresAtUtc));
     }
 
     [HttpDelete("{attachmentId:guid}")]
@@ -76,6 +144,7 @@ public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService 
 
         db.Attachments.Remove(attachment);
         await db.SaveChangesAsync(ct);
+        await storage.DeleteAsync(attachment.StorageKey, ct);
         await auditLogger.LogAsync("attachment.deleted", nameof(Attachment), attachmentId, null, ct);
 
         return NoContent();
@@ -85,5 +154,5 @@ public class AttachmentsController(SentinelOpsDbContext db, ICurrentUserService 
         db.Attachments.FirstOrDefaultAsync(a => a.OrganizationId == orgId && a.IncidentId == incidentId && a.Id == attachmentId, ct);
 
     private static AttachmentResponse ToResponse(Attachment a) => new(
-        a.Id, a.IncidentId, a.FileName, a.ContentType, a.SizeBytes, a.StorageKey, a.UploadedByUserId, a.CreatedAtUtc);
+        a.Id, a.IncidentId, a.FileName, a.ContentType, a.SizeBytes, a.StorageKey, a.UploadedByUserId, a.ScanStatus, a.CreatedAtUtc);
 }

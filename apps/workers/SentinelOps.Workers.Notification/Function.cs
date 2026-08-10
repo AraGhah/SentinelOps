@@ -1,6 +1,7 @@
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
 using Microsoft.EntityFrameworkCore;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Notifications;
 using SentinelOps.Events;
@@ -116,6 +117,8 @@ public class Function
         {
             notification.Status = NotificationStatus.Delivered;
             notification.DeliveredAtUtc = DateTimeOffset.UtcNow;
+            IncidentTimeline.Record(db, detail.OrganizationId, incident.Id, IncidentEventType.NotificationSent, actorUserId: null,
+                details: new { notification.RecipientUserId, notification.Channel, notification.Kind });
             await db.SaveChangesAsync(CancellationToken.None);
 
             WorkerLog.Info(context, WorkerName, "Notification delivered.",

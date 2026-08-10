@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Amazon.S3;
+using SentinelOps.Api.Attachments;
 using SentinelOps.Api.Auth;
 using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
@@ -95,6 +97,17 @@ builder.Services
 builder.Services.AddSingleton<IEventPublisher, EventBridgeEventPublisher>();
 builder.Services.AddSingleton<IAlertQueuePublisher, EventBridgeAlertPublisher>();
 builder.Services.AddScoped<IAlertIngestionService, AlertIngestionService>();
+
+builder.Services
+    .AddOptions<AttachmentStorageOptions>()
+    .Bind(builder.Configuration.GetSection(AttachmentStorageOptions.SectionName))
+    .ValidateDataAnnotations();
+builder.Services.AddSingleton<IAmazonS3>(sp =>
+{
+    var region = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AttachmentStorageOptions>>().Value.Region;
+    return new AmazonS3Client(Amazon.RegionEndpoint.GetBySystemName(region));
+});
+builder.Services.AddSingleton<IAttachmentStorageService, S3AttachmentStorageService>();
 
 var cognitoOptions = builder.Configuration.GetSection(CognitoOptions.SectionName).Get<CognitoOptions>()!;
 

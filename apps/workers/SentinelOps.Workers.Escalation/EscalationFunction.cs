@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Amazon.Lambda.Core;
 using Microsoft.EntityFrameworkCore;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Domain;
 using SentinelOps.Events;
 using SentinelOps.Workers.Shared;
@@ -100,6 +101,8 @@ public class EscalationFunction
             var notifications = targetUserIds.Select(userId => NewNotification(input.OrganizationId, incident.Id, userId)).ToList();
             db.Notifications.AddRange(notifications);
             incident.CurrentEscalationLevel = nextLevel.Order;
+            IncidentTimeline.Record(db, input.OrganizationId, incident.Id, IncidentEventType.Escalated, actorUserId: null,
+                details: new { FromLevel = input.CurrentLevelOrder, ToLevel = nextLevel.Order, TargetUserIds = targetUserIds });
             await db.SaveChangesAsync(CancellationToken.None);
 
             foreach (var notification in notifications)
@@ -141,6 +144,8 @@ public class EscalationFunction
 
             var notification = NewNotification(input.OrganizationId, incident.Id, adminId);
             db.Notifications.Add(notification);
+            IncidentTimeline.Record(db, input.OrganizationId, incident.Id, IncidentEventType.Escalated, actorUserId: null,
+                details: new { FromLevel = input.CurrentLevelOrder, ToLevel = fallbackLevelOrder, TargetUserIds = new[] { adminId } });
             await db.SaveChangesAsync(CancellationToken.None);
 
             await _eventPublisher.PublishAsync(EventSources.EscalationWorker, EventTypes.NotificationRequested,

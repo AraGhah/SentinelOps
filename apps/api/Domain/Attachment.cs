@@ -1,7 +1,11 @@
 namespace SentinelOps.Api.Domain;
 
-// Metadata only. StorageKey is an opaque placeholder string standing in for a
-// future S3 object key; no actual file bytes are handled by this scaffolding.
+// Pending until the GuardDuty Malware Protection finding for this object's
+// upload arrives (see SentinelOps.Workers.AttachmentScan); download presigning
+// refuses anything other than Clean. Objects land in S3 under an
+// org/incident-scoped key (StorageKey) — see IAttachmentStorageService.
+public enum AttachmentScanStatus { Pending, Clean, Infected, Failed }
+
 public class Attachment : ITenantOwned
 {
     public Guid Id { get; set; }
@@ -12,6 +16,7 @@ public class Attachment : ITenantOwned
     public long SizeBytes { get; set; }
     public required string StorageKey { get; set; }
     public Guid UploadedByUserId { get; set; }
+    public AttachmentScanStatus ScanStatus { get; set; } = AttachmentScanStatus.Pending;
     public DateTimeOffset CreatedAtUtc { get; set; }
 
     public Incident? Incident { get; set; }

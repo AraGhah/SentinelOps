@@ -55,6 +55,7 @@ public class IncidentsController(
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<IncidentResponse>> Create(Guid orgId, CreateIncidentRequest request, CancellationToken ct)
     {
+        var actor = await currentUserService.GetOrProvisionAsync(ct);
         var incident = new Incident
         {
             Id = Guid.NewGuid(),
@@ -69,6 +70,12 @@ public class IncidentsController(
         };
 
         db.Incidents.Add(incident);
+        IncidentTimeline.Record(db, orgId, incident.Id, IncidentEventType.Created, actor.Id, incident.Title);
+        if (request.AssignedResponderUserId is not null)
+        {
+            IncidentTimeline.Record(db, orgId, incident.Id, IncidentEventType.Assigned, actor.Id,
+                details: new { AssignedResponderUserId = request.AssignedResponderUserId });
+        }
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync("incident.created", nameof(Incident), incident.Id, new { incident.Title }, ct);
 
@@ -83,11 +90,20 @@ public class IncidentsController(
         var incident = await Find(orgId, incidentId, ct);
         if (incident is null) return NotFound();
 
+        var actor = await currentUserService.GetOrProvisionAsync(ct);
+        var previousResponderId = incident.AssignedResponderUserId;
+
         incident.Title = request.Title.Trim();
         incident.Description = request.Description;
         incident.Severity = request.Severity;
         incident.ServiceId = request.ServiceId;
         incident.AssignedResponderUserId = request.AssignedResponderUserId;
+
+        if (request.AssignedResponderUserId != previousResponderId && request.AssignedResponderUserId is not null)
+        {
+            IncidentTimeline.Record(db, orgId, incident.Id, IncidentEventType.Assigned, actor.Id,
+                details: new { AssignedResponderUserId = request.AssignedResponderUserId });
+        }
 
         await db.SaveChangesAsync(ct);
         await auditLogger.LogAsync("incident.updated", nameof(Incident), incident.Id, null, ct);
@@ -163,6 +179,17 @@ public class IncidentsController(
             Note = request.Note,
             ChangedAtUtc = DateTimeOffset.UtcNow,
         });
+
+        // Acknowledged/Resolved get their own event type (the timeline calls
+        // them out separately); every other transition is a generic StatusChanged.
+        var timelineEventType = request.Status switch
+        {
+            IncidentStatus.Acknowledged => IncidentEventType.Acknowledged,
+            IncidentStatus.Resolved => IncidentEventType.Resolved,
+            _ => IncidentEventType.StatusChanged,
+        };
+        IncidentTimeline.Record(db, orgId, incident.Id, timelineEventType, actor.Id,
+            details: new { From = fromStatus, To = request.Status, request.Note });
 
         // Let the resolved responder know, same event chain every other
         // notification uses (see SentinelOps.Workers.Notification). Created
@@ -275,9 +302,27 @@ public class IncidentsController(
         };
 
         db.IncidentComments.Add(comment);
+        IncidentTimeline.Record(db, orgId, incidentId, IncidentEventType.CommentAdded, actor.Id,
+            details: new { CommentId = comment.Id, comment.IsInternal });
         await db.SaveChangesAsync(ct);
 
         return Ok(new CommentResponse(comment.Id, comment.AuthorUserId, comment.Body, comment.IsInternal, comment.CreatedAtUtc));
+    }
+
+    [HttpGet("{incidentId:guid}/timeline")]
+    [Authorize(Policy = OrgPolicies.Viewer)]
+    public async Task<ActionResult<List<IncidentEventResponse>>> GetTimeline(Guid orgId, Guid incidentId, CancellationToken ct)
+    {
+        var incidentExists = await db.Incidents.AnyAsync(i => i.OrganizationId == orgId && i.Id == incidentId, ct);
+        if (!incidentExists) return NotFound();
+
+        var timeline = await db.IncidentEvents
+            .Where(e => e.OrganizationId == orgId && e.IncidentId == incidentId)
+            .OrderBy(e => e.OccurredAtUtc)
+            .Select(e => new IncidentEventResponse(e.Id, e.EventType, e.ActorUserId, e.Summary, e.Details, e.OccurredAtUtc))
+            .ToListAsync(ct);
+
+        return Ok(timeline);
     }
 
     [HttpPost("{incidentId:guid}/related/{relatedIncidentId:guid}")]

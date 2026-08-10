@@ -20,6 +20,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
     public DbSet<Incident> Incidents => Set<Incident>();
     public DbSet<IncidentComment> IncidentComments => Set<IncidentComment>();
     public DbSet<IncidentStatusHistory> IncidentStatusHistories => Set<IncidentStatusHistory>();
+    public DbSet<IncidentEvent> IncidentEvents => Set<IncidentEvent>();
     public DbSet<IncidentTag> IncidentTags => Set<IncidentTag>();
     public DbSet<RelatedIncidentLink> RelatedIncidentLinks => Set<RelatedIncidentLink>();
     public DbSet<Alert> Alerts => Set<Alert>();
@@ -203,6 +204,19 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
             b.HasQueryFilter(h => h.OrganizationId == currentOrganization.OrganizationId);
 
             b.HasOne(h => h.Incident).WithMany().HasForeignKey(h => h.IncidentId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<IncidentEvent>(b =>
+        {
+            b.HasKey(e => e.Id);
+            b.Property(e => e.Summary).HasMaxLength(500);
+            b.Property(e => e.Details).HasColumnType("jsonb");
+            // Ascending, since the timeline endpoint always renders oldest-first.
+            b.HasIndex(e => new { e.OrganizationId, e.IncidentId, e.OccurredAtUtc });
+            b.HasQueryFilter(e => e.OrganizationId == currentOrganization.OrganizationId);
+
+            b.HasOne(e => e.Incident).WithMany().HasForeignKey(e => e.IncidentId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

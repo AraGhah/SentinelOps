@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SentinelOps.Api.Attachments;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Ingestion;
 using SentinelOps.Events;
@@ -39,6 +40,8 @@ public class ApiTestFixture : IAsyncLifetime
                     ["Cognito:Region"] = "us-east-1",
                     ["Cognito:UserPoolId"] = "test-pool",
                     ["Cognito:ClientId"] = "test-client",
+                    ["Aws:Attachments:Region"] = "us-east-1",
+                    ["Aws:Attachments:BucketName"] = "test-attachments-bucket",
                 });
             });
 
@@ -62,6 +65,10 @@ public class ApiTestFixture : IAsyncLifetime
                 // No real EventBridge bus in tests either — same recorder pattern.
                 services.AddSingleton<FakeEventPublisher>();
                 services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<FakeEventPublisher>());
+
+                // No real S3 bucket in tests — same recorder pattern.
+                services.AddSingleton<FakeAttachmentStorageService>();
+                services.AddSingleton<IAttachmentStorageService>(sp => sp.GetRequiredService<FakeAttachmentStorageService>());
             });
         });
 

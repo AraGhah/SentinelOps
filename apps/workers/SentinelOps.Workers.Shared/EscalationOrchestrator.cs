@@ -1,3 +1,4 @@
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Events;
@@ -40,6 +41,10 @@ public static class EscalationOrchestrator
         {
             incident.CurrentEscalationLevel = firstLevel.Order;
         }
+
+        // Automated action, no human actor — the timeline shows this as "System".
+        IncidentTimeline.Record(db, organizationId, incident.Id, IncidentEventType.Assigned, actorUserId: null,
+            details: new { AssignedResponderUserId = responderId });
 
         await db.SaveChangesAsync(ct);
 

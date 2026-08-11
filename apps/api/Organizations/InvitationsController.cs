@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Tenancy;
@@ -11,7 +12,8 @@ namespace SentinelOps.Api.Organizations;
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/invitations")]
-public class InvitationsController(SentinelOpsDbContext db, ICurrentUserService currentUserService) : ControllerBase
+public class InvitationsController(SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger)
+    : ControllerBase
 {
     private static readonly TimeSpan InvitationLifetime = TimeSpan.FromDays(7);
 
@@ -74,6 +76,8 @@ public class InvitationsController(SentinelOpsDbContext db, ICurrentUserService 
 
         db.OrganizationInvitations.Add(invitation);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync(
+            "invitation.created", nameof(OrganizationInvitation), invitation.Id, new { invitation.Email, invitation.Role }, ct);
 
         return Ok(new InvitationResponse(
             invitation.Id, invitation.Email, invitation.Role, invitation.Status, invitation.ExpiresAtUtc, invitation.Token));
@@ -91,6 +95,7 @@ public class InvitationsController(SentinelOpsDbContext db, ICurrentUserService 
         {
             invitation.Status = InvitationStatus.Revoked;
             await db.SaveChangesAsync(ct);
+            await auditLogger.LogAsync("invitation.revoked", nameof(OrganizationInvitation), invitation.Id, null, ct);
         }
 
         return NoContent();
@@ -109,7 +114,8 @@ public class InvitationsController(SentinelOpsDbContext db, ICurrentUserService 
 [ApiController]
 [Authorize]
 [Route("api/v1/invitations")]
-public class InvitationAcceptanceController(SentinelOpsDbContext db, ICurrentUserService currentUserService) : ControllerBase
+public class InvitationAcceptanceController(SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger)
+    : ControllerBase
 {
     [HttpPost("accept")]
     public async Task<ActionResult<MyOrganizationResponse>> Accept(AcceptInvitationRequest request, CancellationToken ct)
@@ -159,6 +165,9 @@ public class InvitationAcceptanceController(SentinelOpsDbContext db, ICurrentUse
         user.LastActiveOrganizationId = invitation.OrganizationId;
 
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync(
+            "invitation.accepted", nameof(OrganizationInvitation), invitation.Id, null, ct,
+            organizationId: invitation.OrganizationId);
 
         return Ok(new MyOrganizationResponse(
             invitation.OrganizationId, invitation.Organization!.Name, invitation.Organization.Slug, invitation.Role, true));

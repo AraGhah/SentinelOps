@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Tenancy;
@@ -10,7 +11,7 @@ namespace SentinelOps.Api.Organizations;
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations")]
-public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserService currentUserService)
+public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger)
     : ControllerBase
 {
     [HttpPost]
@@ -61,6 +62,9 @@ public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserServic
         user.LastActiveOrganizationId = organization.Id;
 
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync(
+            "organization.created", nameof(Organization), organization.Id, new { organization.Name }, ct,
+            organizationId: organization.Id);
 
         return Ok(new OrganizationResponse(organization.Id, organization.Name, organization.Slug, organization.CreatedAtUtc));
     }
@@ -149,6 +153,7 @@ public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserServic
         settings.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("organization.settings_updated", nameof(OrganizationSettings), orgId, null, ct);
 
         return Ok(new OrganizationSettingsResponse(
             settings.TimeZone, settings.AlertNotificationEmail, settings.RequireMfaForMembers, settings.UpdatedAtUtc));

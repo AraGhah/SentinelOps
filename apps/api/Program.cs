@@ -12,8 +12,13 @@ using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Ingestion;
+using SentinelOps.Api.Reports;
 using SentinelOps.Api.Tenancy;
 using SentinelOps.Events;
+
+// Community license (free for small teams/companies) — required at startup by
+// QuestPDF or every document-generation call throws.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -108,6 +113,14 @@ builder.Services.AddSingleton<IAmazonS3>(sp =>
     return new AmazonS3Client(Amazon.RegionEndpoint.GetBySystemName(region));
 });
 builder.Services.AddSingleton<IAttachmentStorageService, S3AttachmentStorageService>();
+
+builder.Services
+    .AddOptions<ReportStorageOptions>()
+    .Bind(builder.Configuration.GetSection(ReportStorageOptions.SectionName))
+    .ValidateDataAnnotations();
+// Reuses the IAmazonS3 singleton registered above for attachments — same
+// account/region, no need for a second S3 client just for a different bucket.
+builder.Services.AddSingleton<IReportStorageService, S3ReportStorageService>();
 
 var cognitoOptions = builder.Configuration.GetSection(CognitoOptions.SectionName).Get<CognitoOptions>()!;
 

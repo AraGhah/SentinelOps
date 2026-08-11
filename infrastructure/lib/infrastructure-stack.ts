@@ -377,6 +377,27 @@ export class InfrastructureStack extends cdk.Stack {
       },
     });
 
+    // --- Post-incident reports (section 22) --------------------------------
+    // Private/encrypted/versioned like AttachmentsBucket, but no malware
+    // protection plan: unlike attachments, nothing here is a client-supplied
+    // upload — apps/api renders the HTML/PDF itself (ReportsController.Generate)
+    // and PUTs the bytes directly.
+    const reportsBucket = new s3.Bucket(this, 'ReportsBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      versioned: true,
+      lifecycleRules: [
+        { id: 'ExpireNoncurrentVersions', noncurrentVersionExpiration: cdk.Duration.days(90) },
+      ],
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    new cdk.CfnOutput(this, 'ReportsBucketName', {
+      value: reportsBucket.bucketName,
+      description: 'S3 bucket for generated post-incident reports — set as Aws__Reports__BucketName on apps/api',
+    });
+
     const attachmentScan = workerQueue('AttachmentScan', 15);
     // GuardDuty findings land on the account's default bus, not the
     // sentinelops-events bus every other rule in this stack matches against —

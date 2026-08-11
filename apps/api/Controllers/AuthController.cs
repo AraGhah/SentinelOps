@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using SentinelOps.Api.Auth;
+using SentinelOps.Api.Common;
 
 namespace SentinelOps.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/auth")]
 [EnableRateLimiting("auth")]
-public class AuthController(CognitoAuthService authService, ILogger<AuthController> logger) : ControllerBase
+public class AuthController(CognitoAuthService authService, IAuditLogger auditLogger, ILogger<AuthController> logger) : ControllerBase
 {
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest request)
@@ -58,10 +59,12 @@ public class AuthController(CognitoAuthService authService, ILogger<AuthControll
         try
         {
             var response = await authService.LoginAsync(request.Email, request.Password);
+            await auditLogger.LogAsync("auth.login_succeeded", details: new { request.Email });
             return Ok(response);
         }
         catch (Exception ex)
         {
+            await auditLogger.LogAsync("auth.login_failed", details: new { request.Email });
             return FromException(ex);
         }
     }

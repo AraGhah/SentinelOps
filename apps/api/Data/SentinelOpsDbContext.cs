@@ -351,6 +351,8 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
         modelBuilder.Entity<Report>(b =>
         {
             b.HasKey(r => r.Id);
+            b.Property(r => r.HtmlStorageKey).HasMaxLength(500);
+            b.Property(r => r.PdfStorageKey).HasMaxLength(500);
             b.HasIndex(r => new { r.OrganizationId, r.IncidentId });
             b.HasQueryFilter(r => r.OrganizationId == currentOrganization.OrganizationId);
 

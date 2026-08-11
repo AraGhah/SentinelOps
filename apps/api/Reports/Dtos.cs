@@ -13,7 +13,13 @@ public record UpdateReportRequest(
 
 public record UpdateReportReviewStatusRequest(ReportReviewStatus ReviewStatus);
 
+public record ShareReportRequest(string? Note);
+
 public record ReportResponse(
     Guid Id, Guid IncidentId, string Summary, string? CustomerImpact, string? RootCause, string? DetectionDetails,
     string? ResolutionDetails, string? PreventionActions, string? FollowUpTasks, ReportReviewStatus ReviewStatus,
-    Guid CreatedByUserId, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc);
+    Guid CreatedByUserId, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, DateTimeOffset? GeneratedAtUtc);
+
+public record GenerateReportResponse(string HtmlDownloadUrl, string PdfDownloadUrl, DateTimeOffset ExpiresAtUtc, DateTimeOffset GeneratedAtUtc);
+
+public record DownloadReportResponse(string Url, DateTimeOffset ExpiresAtUtc);

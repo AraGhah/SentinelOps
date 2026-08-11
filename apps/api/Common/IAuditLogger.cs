@@ -9,7 +9,7 @@ public interface IAuditLogger
 {
     Task LogAsync(
         string action, string? entityType = null, Guid? entityId = null, object? details = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default, Guid? organizationId = null);
 }
 
 // Writes its own SaveChangesAsync, separate from whatever business-entity
@@ -22,9 +22,14 @@ public class AuditLogger(
     IHttpContextAccessor httpContextAccessor)
     : IAuditLogger
 {
+    // organizationId overrides currentOrganization.OrganizationId for actions
+    // taken outside an {orgId}-scoped route (e.g. organization creation, or
+    // invitation acceptance before membership exists) where the accessor
+    // hasn't been populated by OrganizationRoleAuthorizationHandler but the
+    // organization the action concerns is still known to the caller.
     public async Task LogAsync(
         string action, string? entityType = null, Guid? entityId = null, object? details = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default, Guid? organizationId = null)
     {
         var httpContext = httpContextAccessor.HttpContext;
 
@@ -42,7 +47,7 @@ public class AuditLogger(
         db.AuditLogs.Add(new AuditLog
         {
             Id = Guid.NewGuid(),
-            OrganizationId = currentOrganization.OrganizationId,
+            OrganizationId = organizationId ?? currentOrganization.OrganizationId,
             ActorUserId = actorUserId,
             Action = action,
             EntityType = entityType,

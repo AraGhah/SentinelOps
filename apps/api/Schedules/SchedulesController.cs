@@ -11,7 +11,8 @@ namespace SentinelOps.Api.Schedules;
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/schedules")]
-public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService currentUserService) : ControllerBase
+public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService currentUserService, IAuditLogger auditLogger)
+    : ControllerBase
 {
     [HttpGet]
     [Authorize(Policy = OrgPolicies.Viewer)]
@@ -60,6 +61,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
 
         db.Schedules.Add(schedule);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.created", nameof(Schedule), schedule.Id, new { schedule.Name }, ct);
 
         return Ok(ToResponse(schedule));
     }
@@ -78,6 +80,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
         schedule.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.updated", nameof(Schedule), schedule.Id, null, ct);
         return Ok(ToResponse(schedule));
     }
 
@@ -90,6 +93,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
 
         db.Schedules.Remove(schedule);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.deleted", nameof(Schedule), scheduleId, null, ct);
         return NoContent();
     }
 
@@ -131,6 +135,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
 
         db.ScheduleRotations.Add(rotation);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.rotation_added", nameof(ScheduleRotation), rotation.Id, null, ct);
 
         return Ok(new RotationResponse(
             rotation.Id, rotation.ResponderUserId, rotation.DayOfWeek, rotation.StartTimeLocal, rotation.EndTimeLocal,
@@ -147,6 +152,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
 
         db.ScheduleRotations.Remove(rotation);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.rotation_removed", nameof(ScheduleRotation), rotationId, null, ct);
         return NoContent();
     }
 
@@ -194,6 +200,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
 
         db.ScheduleOverrides.Add(scheduleOverride);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.override_added", nameof(ScheduleOverride), scheduleOverride.Id, null, ct);
 
         return Ok(new OverrideResponse(
             scheduleOverride.Id, scheduleOverride.ResponderUserId, scheduleOverride.OriginalResponderUserId,
@@ -211,6 +218,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
 
         db.ScheduleOverrides.Remove(scheduleOverride);
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("schedule.override_removed", nameof(ScheduleOverride), overrideId, null, ct);
         return NoContent();
     }
 

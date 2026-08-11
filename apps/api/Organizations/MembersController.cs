@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 using SentinelOps.Api.Tenancy;
@@ -13,7 +14,8 @@ namespace SentinelOps.Api.Organizations;
 public class MembersController(
     SentinelOpsDbContext db,
     ICurrentUserService currentUserService,
-    ICurrentOrganizationAccessor currentOrganization)
+    ICurrentOrganizationAccessor currentOrganization,
+    IAuditLogger auditLogger)
     : ControllerBase
 {
     [HttpGet]
@@ -58,8 +60,11 @@ public class MembersController(
             }
         }
 
+        var fromRole = membership.Role;
         membership.Role = request.Role;
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync(
+            "member.role_changed", nameof(OrganizationMembership), membership.Id, new { From = fromRole, To = request.Role }, ct);
 
         return NoContent();
     }
@@ -91,6 +96,7 @@ public class MembersController(
         membership.DeactivatedByUserId = actor.Id;
 
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("member.deactivated", nameof(OrganizationMembership), membership.Id, null, ct);
         return NoContent();
     }
 
@@ -107,6 +113,7 @@ public class MembersController(
         membership.DeactivatedByUserId = null;
 
         await db.SaveChangesAsync(ct);
+        await auditLogger.LogAsync("member.reactivated", nameof(OrganizationMembership), membership.Id, null, ct);
         return NoContent();
     }
 

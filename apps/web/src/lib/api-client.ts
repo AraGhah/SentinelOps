@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -7,7 +7,7 @@ export class ApiError extends Error {
 
   constructor(status: number, message: string, detail?: string, errors?: Record<string, string[]>) {
     super(message);
-    this.name = "ApiError";
+    this.name = 'ApiError';
     this.status = status;
     this.detail = detail;
     this.errors = errors;
@@ -15,7 +15,7 @@ export class ApiError extends Error {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   token?: string;
   signal?: AbortSignal;
@@ -30,13 +30,13 @@ type ProblemDetails = {
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, token, signal } = options;
+  const { method = 'GET', body, token, signal } = options;
 
   const headers: Record<string, string> = {
-    Accept: "application/json",
+    Accept: 'application/json',
   };
   if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
+    headers['Content-Type'] = 'application/json';
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -51,21 +51,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       signal,
     });
   } catch {
-    throw new ApiError(0, "Unable to reach the SentinelOps API", `Is apps/api running at ${API_BASE_URL}?`);
+    throw new ApiError(
+      0,
+      'Unable to reach the SentinelOps API',
+      `Is apps/api running at ${API_BASE_URL}?`,
+    );
   }
 
   if (response.status === 204) {
     return undefined as T;
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
-  const payload = contentType.includes("json") ? await response.json().catch(() => null) : null;
+  const contentType = response.headers.get('content-type') ?? '';
+  const payload = contentType.includes('json') ? await response.json().catch(() => null) : null;
 
   if (!response.ok) {
     const problem = (payload ?? {}) as ProblemDetails;
     throw new ApiError(
       response.status,
-      problem.title ?? response.statusText ?? "Request failed",
+      problem.title ?? response.statusText ?? 'Request failed',
       problem.detail,
       problem.errors,
     );
@@ -75,12 +79,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 export const apiClient = {
-  get: <T>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
-    request<T>(path, { ...options, method: "GET" }),
-  post: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, "method" | "body">) =>
-    request<T>(path, { ...options, method: "POST", body }),
-  patch: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, "method" | "body">) =>
-    request<T>(path, { ...options, method: "PATCH", body }),
-  delete: <T>(path: string, options?: Omit<RequestOptions, "method" | "body">) =>
-    request<T>(path, { ...options, method: "DELETE" }),
+  get: <T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'GET' }),
+  post: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'POST', body }),
+  patch: <T>(path: string, body?: unknown, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'PATCH', body }),
+  delete: <T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'DELETE' }),
 };

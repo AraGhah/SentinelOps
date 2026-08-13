@@ -29,6 +29,10 @@ public class OrganizationRoleAuthorizationHandler(
 
         var user = await currentUserService.GetOrProvisionAsync(httpContext?.RequestAborted ?? default);
 
+        // ICurrentOrganizationAccessor isn't populated yet at this point — this
+        // lookup is what populates it — so the tenant filter (which reads it)
+        // can't apply. Scoped explicitly to this one organizationId + userId
+        // pair, never a listing, so it can't leak other orgs' membership rows.
         var membership = await db.OrganizationMemberships
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(m =>

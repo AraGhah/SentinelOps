@@ -9,3 +9,5 @@ public class AttachmentStorageOptions
     [Required] public string BucketName { get; set; } = "";
     [Required] public string Region { get; set; } = "";
 }
+
+

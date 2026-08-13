@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import { resetPassword } from "@/lib/auth/actions";
-import { resetPasswordSchema, type ResetPasswordInput } from "@/lib/validations/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import { resetPassword } from '@/lib/auth/actions';
+import { resetPasswordSchema, type ResetPasswordInput } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
@@ -15,14 +15,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from '@/components/ui/form';
 
 export function ResetPasswordForm({ email }: { email: string }) {
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<ResetPasswordInput>({
     resolver: zodResolver(resetPasswordSchema),
-    defaultValues: { email, code: "", newPassword: "", confirmPassword: "" },
+    defaultValues: { email, code: '', newPassword: '', confirmPassword: '' },
   });
 
   function onSubmit(values: ResetPasswordInput) {
@@ -57,7 +57,12 @@ export function ResetPasswordForm({ email }: { email: string }) {
             <FormItem>
               <FormLabel>Reset code</FormLabel>
               <FormControl>
-                <Input inputMode="numeric" placeholder="123456" autoComplete="one-time-code" {...field} />
+                <Input
+                  inputMode="numeric"
+                  placeholder="123456"
+                  autoComplete="one-time-code"
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -90,7 +95,7 @@ export function ResetPasswordForm({ email }: { email: string }) {
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Resetting..." : "Reset password"}
+          {isPending ? 'Resetting...' : 'Reset password'}
         </Button>
       </form>
     </Form>

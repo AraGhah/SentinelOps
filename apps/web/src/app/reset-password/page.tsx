@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { ResetPasswordForm } from "@/components/auth/reset-password-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Metadata } from 'next';
+import { ResetPasswordForm } from '@/components/auth/reset-password-form';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const metadata: Metadata = {
-  title: "Reset password — SentinelOps",
+  title: 'Reset password — SentinelOps',
 };
 
 export default async function ResetPasswordPage({
@@ -18,10 +18,12 @@ export default async function ResetPasswordPage({
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle className="text-xl">Set a new password</CardTitle>
-          <CardDescription>Enter the code we sent you along with your new password.</CardDescription>
+          <CardDescription>
+            Enter the code we sent you along with your new password.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <ResetPasswordForm email={email ?? ""} />
+          <ResetPasswordForm email={email ?? ''} />
         </CardContent>
       </Card>
     </div>

@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import Link from "next/link";
-import { register } from "@/lib/auth/actions";
-import { registerSchema, type RegisterInput } from "@/lib/validations/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import Link from 'next/link';
+import { register } from '@/lib/auth/actions';
+import { registerSchema, type RegisterInput } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
@@ -16,14 +16,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from '@/components/ui/form';
 
 export function RegisterForm() {
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { email: "", password: "", confirmPassword: "" },
+    defaultValues: { email: '', password: '', confirmPassword: '' },
   });
 
   function onSubmit(values: RegisterInput) {
@@ -88,10 +88,10 @@ export function RegisterForm() {
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Creating account..." : "Create account"}
+          {isPending ? 'Creating account...' : 'Create account'}
         </Button>
         <p className="text-center text-sm text-muted-foreground">
-          Already have an account?{" "}
+          Already have an account?{' '}
           <Link href="/login" className="underline underline-offset-4">
             Sign in
           </Link>

@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { ShieldCheck } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -14,8 +14,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { navItems } from "@/components/layout/nav-config";
+} from '@/components/ui/sidebar';
+import { navItems } from '@/components/layout/nav-config';
 
 export function AppSidebar() {
   const pathname = usePathname();

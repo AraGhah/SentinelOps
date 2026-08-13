@@ -1,6 +1,6 @@
-import { AlertTriangle, RotateCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle, RotateCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 type ErrorStateProps = {
   title?: string;
@@ -9,7 +9,7 @@ type ErrorStateProps = {
 };
 
 export function ErrorState({
-  title = "Something went wrong",
+  title = 'Something went wrong',
   description = "We couldn't load this data. Please try again.",
   onRetry,
 }: ErrorStateProps) {

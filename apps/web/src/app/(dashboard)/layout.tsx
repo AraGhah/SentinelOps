@@ -1,17 +1,13 @@
-import { redirect } from "next/navigation";
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/layout/app-sidebar";
-import { TopNav } from "@/components/layout/top-nav";
-import { getSession } from "@/lib/auth/session";
+import { redirect } from 'next/navigation';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
+import { AppSidebar } from '@/components/layout/app-sidebar';
+import { TopNav } from '@/components/layout/top-nav';
+import { getSession } from '@/lib/auth/session';
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   if (!session) {
-    redirect("/login");
+    redirect('/login');
   }
 
   return (

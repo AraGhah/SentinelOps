@@ -1,8 +1,8 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-const email = z.string().min(1, "Email is required").email("Enter a valid email address");
-const password = z.string().min(8, "Password must be at least 8 characters");
-const code = z.string().min(6, "Enter the 6-digit code").max(6, "Enter the 6-digit code");
+const email = z.string().min(1, 'Email is required').email('Enter a valid email address');
+const password = z.string().min(8, 'Password must be at least 8 characters');
+const code = z.string().min(6, 'Enter the 6-digit code').max(6, 'Enter the 6-digit code');
 
 export const loginSchema = z.object({
   email,
@@ -14,11 +14,11 @@ export const registerSchema = z
   .object({
     email,
     password,
-    confirmPassword: z.string().min(1, "Confirm your password"),
+    confirmPassword: z.string().min(1, 'Confirm your password'),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
   });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
@@ -43,11 +43,11 @@ export const resetPasswordSchema = z
     email,
     code,
     newPassword: password,
-    confirmPassword: z.string().min(1, "Confirm your password"),
+    confirmPassword: z.string().min(1, 'Confirm your password'),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
   });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 

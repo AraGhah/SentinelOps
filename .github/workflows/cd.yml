@@ -1,0 +1,133 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write # required for OIDC — see infrastructure/lib/stacks/cicd-stack.ts
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr-login
+
+      - name: Build and push API image
+        run: |
+          docker build -f apps/api/Dockerfile -t "${{ steps.ecr-login.outputs.registry }}/sentinelops-api:${{ github.sha }}" .
+          docker push "${{ steps.ecr-login.outputs.registry }}/sentinelops-api:${{ github.sha }}"
+
+      # NOTE: apps/web/Dockerfile is currently a local-dev-only image (runs
+      # `npm run dev`, no production build) — a known gap documented in
+      # docs/security/security-assumptions.md and left as a deliberate
+      # follow-up in the containerization pass. This step will fail until
+      # that production Dockerfile exists; not silently skipped, so the
+      # failure is visible rather than hiding a broken frontend deploy.
+      - name: Build and push frontend image
+        run: |
+          docker build -f apps/web/Dockerfile -t "${{ steps.ecr-login.outputs.registry }}/sentinelops-frontend:${{ github.sha }}" apps/web
+          docker push "${{ steps.ecr-login.outputs.registry }}/sentinelops-frontend:${{ github.sha }}"
+
+  deploy-staging:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      api-endpoint: ${{ steps.outputs.outputs.api-endpoint }}
+      frontend-domain: ${{ steps.outputs.outputs.frontend-domain }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - working-directory: infrastructure
+        run: npm ci
+
+      - name: cdk deploy
+        working-directory: infrastructure
+        run: |
+          npx cdk deploy \
+            -c env=staging \
+            -c apiImageTag=${{ github.sha }} \
+            -c frontendImageTag=${{ github.sha }} \
+            --all --require-approval never
+
+      # e2e-staging targets these instead of the (still-placeholder) custom
+      # domains — see tests/e2e/playwright.config.ts.
+      - name: Read stack outputs for the e2e job
+        id: outputs
+        run: |
+          API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name SentinelOpsApiStaging \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiHttpApiEndpoint'].OutputValue" --output text)
+          FRONTEND_DOMAIN=$(aws cloudformation describe-stacks --stack-name SentinelOpsFrontendStaging \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendDistributionDomainName'].OutputValue" --output text)
+          echo "api-endpoint=$API_ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "frontend-domain=https://$FRONTEND_DOMAIN" >> "$GITHUB_OUTPUT"
+
+  e2e-staging:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: tests/e2e
+        run: npm ci
+      - working-directory: tests/e2e
+        run: npx playwright install --with-deps chromium
+      - working-directory: tests/e2e
+        run: npx playwright test
+        env:
+          E2E_API_URL: ${{ needs.deploy-staging.outputs.api-endpoint }}
+          E2E_FRONTEND_URL: ${{ needs.deploy-staging.outputs.frontend-domain }}
+
+  # Requires a "production" GitHub Environment with required reviewers
+  # configured in this repo's Settings > Environments — that reviewer list is
+  # what actually creates the approval gate; it's a repo-admin action, not
+  # something this workflow file can set up on its own.
+  deploy-production:
+    needs: e2e-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - working-directory: infrastructure
+        run: npm ci
+
+      - name: cdk deploy
+        working-directory: infrastructure
+        run: |
+          npx cdk deploy \
+            -c env=production \
+            -c apiImageTag=${{ github.sha }} \
+            -c frontendImageTag=${{ github.sha }} \
+            --all --require-approval never

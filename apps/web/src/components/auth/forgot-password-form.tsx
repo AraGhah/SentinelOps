@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import Link from "next/link";
-import { forgotPassword } from "@/lib/auth/actions";
-import { forgotPasswordSchema, type ForgotPasswordInput } from "@/lib/validations/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import Link from 'next/link';
+import { forgotPassword } from '@/lib/auth/actions';
+import { forgotPasswordSchema, type ForgotPasswordInput } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
@@ -16,14 +16,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from '@/components/ui/form';
 
 export function ForgotPasswordForm() {
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<ForgotPasswordInput>({
     resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: { email: "" },
+    defaultValues: { email: '' },
   });
 
   function onSubmit(values: ForgotPasswordInput) {
@@ -52,7 +52,7 @@ export function ForgotPasswordForm() {
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Sending..." : "Send reset code"}
+          {isPending ? 'Sending...' : 'Send reset code'}
         </Button>
         <p className="text-center text-sm text-muted-foreground">
           <Link href="/login" className="underline underline-offset-4">

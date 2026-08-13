@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import { confirmEmail, resendConfirmationCode } from "@/lib/auth/actions";
-import { confirmEmailSchema, type ConfirmEmailInput } from "@/lib/validations/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import { confirmEmail, resendConfirmationCode } from '@/lib/auth/actions';
+import { confirmEmailSchema, type ConfirmEmailInput } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
@@ -15,7 +15,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from '@/components/ui/form';
 
 export function VerifyEmailForm({ email }: { email: string }) {
   const [isPending, startTransition] = useTransition();
@@ -23,7 +23,7 @@ export function VerifyEmailForm({ email }: { email: string }) {
 
   const form = useForm<ConfirmEmailInput>({
     resolver: zodResolver(confirmEmailSchema),
-    defaultValues: { email, code: "" },
+    defaultValues: { email, code: '' },
   });
 
   function onSubmit(values: ConfirmEmailInput) {
@@ -37,11 +37,11 @@ export function VerifyEmailForm({ email }: { email: string }) {
 
   function onResend() {
     startResendTransition(async () => {
-      const result = await resendConfirmationCode({ email: form.getValues("email") });
+      const result = await resendConfirmationCode({ email: form.getValues('email') });
       if (result?.error) {
         toast.error(result.error);
       } else {
-        toast.success("A new verification code has been sent.");
+        toast.success('A new verification code has been sent.');
       }
     });
   }
@@ -81,7 +81,7 @@ export function VerifyEmailForm({ email }: { email: string }) {
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Verifying..." : "Verify email"}
+          {isPending ? 'Verifying...' : 'Verify email'}
         </Button>
         <Button
           type="button"
@@ -90,7 +90,7 @@ export function VerifyEmailForm({ email }: { email: string }) {
           disabled={isResending}
           onClick={onResend}
         >
-          {isResending ? "Sending..." : "Resend code"}
+          {isResending ? 'Sending...' : 'Resend code'}
         </Button>
       </form>
     </Form>

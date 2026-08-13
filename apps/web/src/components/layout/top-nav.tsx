@@ -1,18 +1,18 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { usePathname } from "next/navigation";
-import { Bell, LogOut, User } from "lucide-react";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { usePathname } from 'next/navigation';
+import { Bell, LogOut, User } from 'lucide-react';
+import { SidebarTrigger } from '@/components/ui/sidebar';
+import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
-} from "@/components/ui/breadcrumb";
+} from '@/components/ui/breadcrumb';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,13 +20,13 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { navItems } from "@/components/layout/nav-config";
-import { logoutAction } from "@/lib/auth/actions";
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { navItems } from '@/components/layout/nav-config';
+import { logoutAction } from '@/lib/auth/actions';
 
 function pageTitle(pathname: string) {
-  return navItems.find((item) => pathname.startsWith(item.href))?.title ?? "SentinelOps";
+  return navItems.find((item) => pathname.startsWith(item.href))?.title ?? 'SentinelOps';
 }
 
 export function TopNav({ userEmail }: { userEmail: string }) {

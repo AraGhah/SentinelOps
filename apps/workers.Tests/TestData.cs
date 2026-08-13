@@ -160,7 +160,10 @@ public static class TestData
         {
             db.EscalationLevelTargets.Add(new EscalationLevelTarget
             {
-                Id = Guid.NewGuid(), OrganizationId = organizationId, EscalationLevelId = level.Id, UserId = userId,
+                Id = Guid.NewGuid(),
+                OrganizationId = organizationId,
+                EscalationLevelId = level.Id,
+                UserId = userId,
             });
         }
 

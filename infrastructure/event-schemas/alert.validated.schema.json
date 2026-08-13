@@ -5,8 +5,30 @@
   "version": "1.0",
   "type": "object",
   "properties": {
-    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
-    "alertId":{"type":"string","format":"uuid"},"externalId":{"type":"string"},"source":{"type":"string"},"title":{"type":"string"},"severity":{"enum":["Critical","High","Medium","Low"]},"environment":{"type":"string"},"region":{"type":["string","null"]}
+    "eventId": { "type": "string", "format": "uuid" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAtUtc": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "alertId": { "type": "string", "format": "uuid" },
+    "externalId": { "type": "string" },
+    "source": { "type": "string" },
+    "title": { "type": "string" },
+    "severity": { "enum": ["Critical", "High", "Medium", "Low"] },
+    "environment": { "type": "string" },
+    "region": { "type": ["string", "null"] }
   },
-  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","alertId","externalId","source","title","severity","environment"]
+  "required": [
+    "eventId",
+    "organizationId",
+    "correlationId",
+    "occurredAtUtc",
+    "schemaVersion",
+    "alertId",
+    "externalId",
+    "source",
+    "title",
+    "severity",
+    "environment"
+  ]
 }

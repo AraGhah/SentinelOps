@@ -75,7 +75,10 @@ public class EscalationPoliciesController(SentinelOpsDbContext db, IAuditLogger 
             level.Targets = levelRequest.TargetUserIds
                 .Select(userId => new EscalationLevelTarget
                 {
-                    Id = Guid.NewGuid(), OrganizationId = orgId, EscalationLevelId = level.Id, UserId = userId,
+                    Id = Guid.NewGuid(),
+                    OrganizationId = orgId,
+                    EscalationLevelId = level.Id,
+                    UserId = userId,
                 })
                 .ToList();
             policy.Levels.Add(level);

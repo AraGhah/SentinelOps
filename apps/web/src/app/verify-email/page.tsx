@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { VerifyEmailForm } from "@/components/auth/verify-email-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Metadata } from 'next';
+import { VerifyEmailForm } from '@/components/auth/verify-email-form';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const metadata: Metadata = {
-  title: "Verify email — SentinelOps",
+  title: 'Verify email — SentinelOps',
 };
 
 export default async function VerifyEmailPage({
@@ -24,7 +24,7 @@ export default async function VerifyEmailPage({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <VerifyEmailForm email={email ?? ""} />
+          <VerifyEmailForm email={email ?? ''} />
         </CardContent>
       </Card>
     </div>

@@ -5,8 +5,26 @@
   "version": "1.0",
   "type": "object",
   "properties": {
-    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
-    "incidentId":{"type":"string","format":"uuid"},"alertId":{"type":"string","format":"uuid"},"serviceId":{"type":["string","null"],"format":"uuid"},"title":{"type":"string"},"severity":{"enum":["Critical","High","Medium","Low"]}
+    "eventId": { "type": "string", "format": "uuid" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAtUtc": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "incidentId": { "type": "string", "format": "uuid" },
+    "alertId": { "type": "string", "format": "uuid" },
+    "serviceId": { "type": ["string", "null"], "format": "uuid" },
+    "title": { "type": "string" },
+    "severity": { "enum": ["Critical", "High", "Medium", "Low"] }
   },
-  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","incidentId","alertId","title","severity"]
+  "required": [
+    "eventId",
+    "organizationId",
+    "correlationId",
+    "occurredAtUtc",
+    "schemaVersion",
+    "incidentId",
+    "alertId",
+    "title",
+    "severity"
+  ]
 }

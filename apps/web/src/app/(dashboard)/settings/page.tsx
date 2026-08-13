@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
-import { SecuritySettings } from "@/components/settings/security-settings";
+import type { Metadata } from 'next';
+import { SecuritySettings } from '@/components/settings/security-settings';
 
 export const metadata: Metadata = {
-  title: "Settings — SentinelOps",
+  title: 'Settings — SentinelOps',
 };
 
 export default function SettingsPage() {

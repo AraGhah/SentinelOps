@@ -1,8 +1,8 @@
-import type { Metadata } from "next";
-import { IncidentsView } from "@/components/incidents/incidents-view";
+import type { Metadata } from 'next';
+import { IncidentsView } from '@/components/incidents/incidents-view';
 
 export const metadata: Metadata = {
-  title: "Incidents — SentinelOps",
+  title: 'Incidents — SentinelOps',
 };
 
 export default function IncidentsPage() {

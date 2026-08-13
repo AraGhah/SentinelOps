@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from '@/components/ui/skeleton';
 
 export function LoadingState({ rows = 5 }: { rows?: number }) {
   return (

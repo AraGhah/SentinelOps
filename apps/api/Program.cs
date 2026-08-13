@@ -22,6 +22,11 @@ QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Overrides ConnectionStrings:SentinelOpsDb from the ECS-injected Secrets
+// Manager JSON when running in AWS; no-op locally (appsettings.json already
+// has a connection string there).
+ApiDbConnectionStringResolver.ApplyToConfiguration(builder.Configuration);
+
 // Add services to the container.
 
 builder.Services.AddControllers();
@@ -36,6 +41,32 @@ builder.Services.AddScoped<ICurrentOrganizationAccessor, CurrentOrganizationAcce
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IAuditLogger, AuditLogger>();
 builder.Services.AddScoped<IAuthorizationHandler, OrganizationRoleAuthorizationHandler>();
+
+builder.Services.AddHealthChecks();
+
+// Graceful shutdown: on SIGTERM the host stops accepting new requests
+// immediately but waits up to this long for in-flight requests to finish
+// before forcing them closed. Matches ECS's container `stopTimeout` (see
+// ApiStack) — kept in sync deliberately, since a shorter value here than
+// ECS's SIGKILL deadline would just mean ECS does the killing instead of a
+// clean exit, and a longer one would get cut off by ECS regardless.
+builder.Host.ConfigureHostOptions(options => options.ShutdownTimeout = TimeSpan.FromSeconds(28));
+
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+});
+
+// apps/web is the only browser-based caller today; additional origins are
+// added here (or via CORS__ALLOWEDORIGINS__n env vars), never a wildcard,
+// since AllowCredentials() is required for the JWT bearer token to reach the
+// API from the browser.
+builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
+    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .AllowAnyHeader()
+    .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE")
+    .AllowCredentials()));
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -178,14 +209,26 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "SentinelOps API v1"));
 }
 
+// HSTS on localhost during Development breaks plain-HTTP local dev, so it's
+// only enforced once the app is actually reachable over TLS (behind the ALB).
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
 app.UseHttpsRedirection();
 
 app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+app.UseCors("Default");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseRateLimiter();
+
+app.MapHealthChecks("/healthz").AllowAnonymous();
 
 // Default rate-limit policy for the whole API; AuthController overrides it
 // with the stricter "auth" policy via [EnableRateLimiting("auth")].

@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
-import Link from "next/link";
-import { ShieldAlert } from "lucide-react";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { ShieldAlert } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
-  title: "Access denied — SentinelOps",
+  title: 'Access denied — SentinelOps',
 };
 
 export default function ForbiddenPage() {
@@ -17,7 +17,7 @@ export default function ForbiddenPage() {
         Your account doesn&apos;t have permission to view this page. Contact your administrator if
         you believe this is a mistake.
       </p>
-      <Link href="/dashboard" className={cn(buttonVariants({ variant: "default" }), "mt-2")}>
+      <Link href="/dashboard" className={cn(buttonVariants({ variant: 'default' }), 'mt-2')}>
         Back to dashboard
       </Link>
     </div>

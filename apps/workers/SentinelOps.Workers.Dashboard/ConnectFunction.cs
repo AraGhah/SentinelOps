@@ -22,8 +22,7 @@ public class ConnectFunction
     private readonly IConnectionStore _connectionStore;
 
     public ConnectFunction() : this(
-        Environment.GetEnvironmentVariable("CONNECTION_STRING")
-            ?? throw new InvalidOperationException("CONNECTION_STRING environment variable is not set."),
+        DbConnectionStringResolver.FromEnvironment(),
         CognitoTokenValidator.FromEnvironment(),
         DynamoDbConnectionStore.FromEnvironment())
     {

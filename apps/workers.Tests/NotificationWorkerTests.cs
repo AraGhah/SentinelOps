@@ -101,8 +101,13 @@ public class NotificationWorkerTests(WorkerTestFixture fixture)
         {
             db.NotificationPreferences.Add(new NotificationPreference
             {
-                Id = Guid.NewGuid(), OrganizationId = orgId, UserId = recipient.Id, EmailEnabled = true,
-                QuietHoursStartLocal = new TimeOnly(0, 0), QuietHoursEndLocal = new TimeOnly(23, 59), TimeZoneId = "UTC",
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                UserId = recipient.Id,
+                EmailEnabled = true,
+                QuietHoursStartLocal = new TimeOnly(0, 0),
+                QuietHoursEndLocal = new TimeOnly(23, 59),
+                TimeZoneId = "UTC",
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
             });
             await db.SaveChangesAsync();
@@ -134,7 +139,10 @@ public class NotificationWorkerTests(WorkerTestFixture fixture)
         {
             db.NotificationPreferences.Add(new NotificationPreference
             {
-                Id = Guid.NewGuid(), OrganizationId = orgId, UserId = recipient.Id, EmailEnabled = false,
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                UserId = recipient.Id,
+                EmailEnabled = false,
                 UpdatedAtUtc = DateTimeOffset.UtcNow,
             });
             await db.SaveChangesAsync();

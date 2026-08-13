@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import { verifyMfa } from "@/lib/auth/actions";
-import { mfaCodeSchema, type MfaCodeInput } from "@/lib/validations/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import { verifyMfa } from '@/lib/auth/actions';
+import { mfaCodeSchema, type MfaCodeInput } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
@@ -15,14 +15,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from '@/components/ui/form';
 
 export function MfaForm({ email, challengeSession }: { email: string; challengeSession: string }) {
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<MfaCodeInput>({
     resolver: zodResolver(mfaCodeSchema),
-    defaultValues: { code: "" },
+    defaultValues: { code: '' },
   });
 
   function onSubmit(values: MfaCodeInput) {
@@ -57,7 +57,7 @@ export function MfaForm({ email, challengeSession }: { email: string; challengeS
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Verifying..." : "Verify"}
+          {isPending ? 'Verifying...' : 'Verify'}
         </Button>
       </form>
     </Form>

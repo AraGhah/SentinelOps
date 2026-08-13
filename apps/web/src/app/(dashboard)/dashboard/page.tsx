@@ -1,16 +1,16 @@
-import type { Metadata } from "next";
-import { ShieldAlert, ShieldCheck, Clock, Cloud } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Metadata } from 'next';
+import { ShieldAlert, ShieldCheck, Clock, Cloud } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const metadata: Metadata = {
-  title: "Dashboard — SentinelOps",
+  title: 'Dashboard — SentinelOps',
 };
 
 const stats = [
-  { label: "Open incidents", value: "—", icon: ShieldAlert },
-  { label: "Closed this week", value: "—", icon: ShieldCheck },
-  { label: "Mean time to close", value: "—", icon: Clock },
-  { label: "Linked AWS accounts", value: "—", icon: Cloud },
+  { label: 'Open incidents', value: '—', icon: ShieldAlert },
+  { label: 'Closed this week', value: '—', icon: ShieldCheck },
+  { label: 'Mean time to close', value: '—', icon: Clock },
+  { label: 'Linked AWS accounts', value: '—', icon: Cloud },
 ];
 
 export default function DashboardPage() {

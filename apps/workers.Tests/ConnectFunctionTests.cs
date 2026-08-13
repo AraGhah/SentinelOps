@@ -29,8 +29,13 @@ public class ConnectFunctionTests(WorkerTestFixture fixture)
             user.CognitoSub = cognitoSub;
             db.OrganizationMemberships.Add(new OrganizationMembership
             {
-                Id = Guid.NewGuid(), OrganizationId = orgId, UserId = user.Id, Role = OrganizationRole.Responder,
-                IsActive = true, InvitedByUserId = user.Id, CreatedAtUtc = DateTimeOffset.UtcNow,
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                UserId = user.Id,
+                Role = OrganizationRole.Responder,
+                IsActive = true,
+                InvitedByUserId = user.Id,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
             });
             await db.SaveChangesAsync();
         }
@@ -111,8 +116,13 @@ public class ConnectFunctionTests(WorkerTestFixture fixture)
             user.CognitoSub = cognitoSub;
             db.OrganizationMemberships.Add(new OrganizationMembership
             {
-                Id = Guid.NewGuid(), OrganizationId = orgId, UserId = user.Id, Role = OrganizationRole.Responder,
-                IsActive = false, InvitedByUserId = user.Id, CreatedAtUtc = DateTimeOffset.UtcNow,
+                Id = Guid.NewGuid(),
+                OrganizationId = orgId,
+                UserId = user.Id,
+                Role = OrganizationRole.Responder,
+                IsActive = false,
+                InvitedByUserId = user.Id,
+                CreatedAtUtc = DateTimeOffset.UtcNow,
             });
             await db.SaveChangesAsync();
         }

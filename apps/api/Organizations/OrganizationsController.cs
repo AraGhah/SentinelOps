@@ -74,6 +74,10 @@ public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserServic
     {
         var user = await currentUserService.GetOrProvisionAsync(ct);
 
+        // This endpoint's whole purpose is listing every org the caller
+        // belongs to — there's no single "current org" to filter by yet, and
+        // the explicit UserId == user.Id predicate keeps it scoped to the
+        // caller's own memberships, not a cross-tenant listing.
         var memberships = await db.OrganizationMemberships
             .IgnoreQueryFilters()
             .Where(m => m.UserId == user.Id && m.IsActive)
@@ -95,6 +99,9 @@ public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserServic
         var user = await currentUserService.GetOrProvisionAsync(ct);
         if (user.LastActiveOrganizationId is null) return Ok(null);
 
+        // Same reasoning as ListMine above: this resolves which org is
+        // "current," so no current org can be assumed yet — explicit
+        // OrganizationId + UserId predicate takes the filter's place.
         var membership = await db.OrganizationMemberships
             .IgnoreQueryFilters()
             .Include(m => m.Organization)
@@ -170,6 +177,10 @@ public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserServic
 
         if (string.IsNullOrEmpty(baseSlug)) baseSlug = "organization";
 
+        // Organization is the tenant root itself (no OrganizationId, no query
+        // filter) — IgnoreQueryFilters() here is defensive, not a bypass.
+        // Slugs must be unique across every org, so this deliberately checks
+        // the whole table, not just the caller's own org(s).
         var slug = baseSlug;
         var suffix = 1;
         while (await db.Organizations.IgnoreQueryFilters().AnyAsync(o => o.Slug == slug, ct))

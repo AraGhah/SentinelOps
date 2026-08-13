@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { Cloud } from "lucide-react";
-import { EmptyState } from "@/components/states/empty-state";
+import type { Metadata } from 'next';
+import { Cloud } from 'lucide-react';
+import { EmptyState } from '@/components/states/empty-state';
 
 export const metadata: Metadata = {
-  title: "AWS Accounts — SentinelOps",
+  title: 'AWS Accounts — SentinelOps',
 };
 
 export default function AccountsPage() {

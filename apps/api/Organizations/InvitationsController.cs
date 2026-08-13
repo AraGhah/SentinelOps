@@ -120,6 +120,11 @@ public class InvitationAcceptanceController(SentinelOpsDbContext db, ICurrentUse
     [HttpPost("accept")]
     public async Task<ActionResult<MyOrganizationResponse>> Accept(AcceptInvitationRequest request, CancellationToken ct)
     {
+        // The caller isn't a member of the target org yet — that's the whole
+        // point of accepting an invitation — so there's no org to filter by.
+        // Token is a random 64-char secret (OrganizationInvitation.Token),
+        // not enumerable, so this is safe: it's effectively a lookup key, not
+        // a listing.
         var invitation = await db.OrganizationInvitations
             .IgnoreQueryFilters()
             .Include(i => i.Organization)
@@ -136,6 +141,10 @@ public class InvitationAcceptanceController(SentinelOpsDbContext db, ICurrentUse
             return Problem(title: "Invalid invitation", detail: "This invitation was issued to a different email address.", statusCode: 403);
         }
 
+        // Same reason as above: checking for an existing membership in
+        // invitation.OrganizationId is what determines whether the caller is
+        // already a member of that org — can't apply a filter keyed on an org
+        // membership this query exists to establish/confirm.
         var existingMembership = await db.OrganizationMemberships
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(m => m.OrganizationId == invitation.OrganizationId && m.UserId == user.Id, ct);

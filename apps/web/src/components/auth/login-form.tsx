@@ -1,15 +1,15 @@
-"use client";
+'use client';
 
-import { useTransition } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { login } from "@/lib/auth/actions";
-import { loginSchema, type LoginInput } from "@/lib/validations/auth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useTransition } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { toast } from 'sonner';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { login } from '@/lib/auth/actions';
+import { loginSchema, type LoginInput } from '@/lib/validations/auth';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Form,
   FormControl,
@@ -17,7 +17,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form";
+} from '@/components/ui/form';
 
 export function LoginForm() {
   const [isPending, startTransition] = useTransition();
@@ -25,7 +25,7 @@ export function LoginForm() {
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { email: '', password: '' },
   });
 
   function onSubmit(values: LoginInput) {
@@ -33,7 +33,7 @@ export function LoginForm() {
       const result = await login(values);
       if (!result) return;
 
-      if ("mfaRequired" in result) {
+      if ('mfaRequired' in result) {
         const params = new URLSearchParams({
           email: result.email,
           session: result.challengeSession,
@@ -83,7 +83,7 @@ export function LoginForm() {
           )}
         />
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Signing in..." : "Sign in"}
+          {isPending ? 'Signing in...' : 'Sign in'}
         </Button>
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <Link href="/forgot-password" className="underline underline-offset-4">

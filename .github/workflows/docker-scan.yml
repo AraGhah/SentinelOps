@@ -1,0 +1,38 @@
+name: Docker Image Scan
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/api/**']
+  pull_request:
+    branches: [main]
+    paths: ['apps/api/**']
+
+jobs:
+  trivy-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Repo-root build context, matching how apps/api/Dockerfile is built
+      # locally (docker-compose.yml's `context: .`) and by ECS/CI-to-ECR.
+      - name: Build API image
+        run: docker build -f apps/api/Dockerfile -t sentinelops-api:scan .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'sentinelops-api:scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Upload Trivy results to the GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'

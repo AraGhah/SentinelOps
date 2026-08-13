@@ -7,11 +7,11 @@ public record IngestAlertRequest(
     [Required, MaxLength(200)] string ExternalId,
     [Required, MaxLength(200)] string Source,
     [Required, MaxLength(300)] string Title,
-    string? Description,
+    [MaxLength(10_000)] string? Description,
     [EnumDataType(typeof(IncidentSeverity))] IncidentSeverity Severity,
     DateTimeOffset TimestampUtc,
     [Required, MaxLength(100)] string Environment,
-    string? Region,
-    string? Metadata);
+    [MaxLength(200)] string? Region,
+    [MaxLength(10_000)] string? Metadata);
 
 public record IngestAlertResponse(Guid AlertId, Guid CorrelationId, string Status);

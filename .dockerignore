@@ -1,0 +1,12 @@
+**/bin
+**/obj
+**/node_modules
+**/.next
+.git
+.env
+infrastructure/cdk.out
+infrastructure/node_modules
+apps/web/node_modules
+apps/web/.next
+docs
+*.md

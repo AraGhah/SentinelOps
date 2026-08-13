@@ -5,8 +5,19 @@
   "version": "1.0",
   "type": "object",
   "properties": {
-    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
-    "notificationId":{"type":"string","format":"uuid"}
+    "eventId": { "type": "string", "format": "uuid" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAtUtc": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "notificationId": { "type": "string", "format": "uuid" }
   },
-  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","notificationId"]
+  "required": [
+    "eventId",
+    "organizationId",
+    "correlationId",
+    "occurredAtUtc",
+    "schemaVersion",
+    "notificationId"
+  ]
 }

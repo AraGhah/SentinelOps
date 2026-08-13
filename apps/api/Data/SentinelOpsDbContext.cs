@@ -405,6 +405,14 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
             b.HasKey(e => e.Id);
             b.Property(e => e.EventType).HasMaxLength(100);
             b.HasIndex(e => new { e.OrganizationId, e.EventType, e.OccurredAtUtc });
+            // Was the one tenant-owned entity without a filter — nothing in
+            // apps/api reads AnalyticsEvents today (only SentinelOps.Workers.Analytics
+            // writes it, via WorkerDbContextFactory.CreateUnscoped, which
+            // never resolves an OrganizationId and so isn't affected by this
+            // filter), so this closes the gap with no behavior change to any
+            // existing caller. Any future org-scoped read of this table gets
+            // the same closed-by-default protection every other entity has.
+            b.HasQueryFilter(e => e.OrganizationId == currentOrganization.OrganizationId);
         });
     }
 }

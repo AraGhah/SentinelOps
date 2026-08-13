@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { Users } from "lucide-react";
-import { EmptyState } from "@/components/states/empty-state";
+import type { Metadata } from 'next';
+import { Users } from 'lucide-react';
+import { EmptyState } from '@/components/states/empty-state';
 
 export const metadata: Metadata = {
-  title: "Users — SentinelOps",
+  title: 'Users — SentinelOps',
 };
 
 export default function UsersPage() {

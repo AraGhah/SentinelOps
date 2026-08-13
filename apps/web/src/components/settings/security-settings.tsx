@@ -1,24 +1,18 @@
-"use client";
+'use client';
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
-import { startMfaSetup, enableMfa } from "@/lib/auth/actions";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useState, useTransition } from 'react';
+import { toast } from 'sonner';
+import { startMfaSetup, enableMfa } from '@/lib/auth/actions';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 type SetupState = { secretCode: string; otpAuthUri: string } | null;
 
 export function SecuritySettings() {
   const [setup, setSetup] = useState<SetupState>(null);
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState('');
   const [enabled, setEnabled] = useState(false);
   const [isStarting, startSetupTransition] = useTransition();
   const [isConfirming, startConfirmTransition] = useTransition();
@@ -26,7 +20,7 @@ export function SecuritySettings() {
   function onStart() {
     startSetupTransition(async () => {
       const result = await startMfaSetup();
-      if ("error" in result) {
+      if ('error' in result) {
         toast.error(result.error);
         return;
       }
@@ -41,7 +35,7 @@ export function SecuritySettings() {
         toast.error(result.error);
         return;
       }
-      toast.success("Authenticator app enabled.");
+      toast.success('Authenticator app enabled.');
       setEnabled(true);
       setSetup(null);
     });
@@ -63,7 +57,7 @@ export function SecuritySettings() {
           </p>
         ) : !setup ? (
           <Button onClick={onStart} disabled={isStarting}>
-            {isStarting ? "Starting..." : "Enable authenticator app"}
+            {isStarting ? 'Starting...' : 'Enable authenticator app'}
           </Button>
         ) : (
           <div className="space-y-3">
@@ -85,7 +79,7 @@ export function SecuritySettings() {
               />
             </div>
             <Button onClick={onConfirm} disabled={isConfirming || code.length === 0}>
-              {isConfirming ? "Confirming..." : "Confirm and enable"}
+              {isConfirming ? 'Confirming...' : 'Confirm and enable'}
             </Button>
           </div>
         )}

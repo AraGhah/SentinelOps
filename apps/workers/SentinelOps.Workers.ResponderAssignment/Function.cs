@@ -24,8 +24,7 @@ public class Function
     private readonly string _stateMachineArn;
 
     public Function() : this(
-        Environment.GetEnvironmentVariable("CONNECTION_STRING")
-            ?? throw new InvalidOperationException("CONNECTION_STRING environment variable is not set."),
+        DbConnectionStringResolver.FromEnvironment(),
         EventBridgeEventPublisher.FromEnvironment(),
         new StepFunctionsEscalationStarter(
             Environment.GetEnvironmentVariable("AWS_REGION")

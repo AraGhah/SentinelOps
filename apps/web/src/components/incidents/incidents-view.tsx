@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useState } from "react";
-import { ShieldAlert } from "lucide-react";
-import { apiClient, ApiError } from "@/lib/api-client";
-import type { Incident } from "@/lib/types";
-import { LoadingState } from "@/components/states/loading-state";
-import { EmptyState } from "@/components/states/empty-state";
-import { ErrorState } from "@/components/states/error-state";
-import { SeverityBadge } from "@/components/incidents/severity-badge";
-import { StatusBadge } from "@/components/incidents/status-badge";
+import { useCallback, useEffect, useState } from 'react';
+import { ShieldAlert } from 'lucide-react';
+import { apiClient, ApiError } from '@/lib/api-client';
+import type { Incident } from '@/lib/types';
+import { LoadingState } from '@/components/states/loading-state';
+import { EmptyState } from '@/components/states/empty-state';
+import { ErrorState } from '@/components/states/error-state';
+import { SeverityBadge } from '@/components/incidents/severity-badge';
+import { StatusBadge } from '@/components/incidents/status-badge';
 import {
   Table,
   TableBody,
@@ -16,24 +16,25 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from '@/components/ui/table';
 
 type ViewState =
-  | { status: "loading" }
-  | { status: "error"; message: string }
-  | { status: "ready"; incidents: Incident[] };
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; incidents: Incident[] };
 
 export function IncidentsView() {
-  const [state, setState] = useState<ViewState>({ status: "loading" });
+  const [state, setState] = useState<ViewState>({ status: 'loading' });
 
   const load = useCallback(() => {
-    setState({ status: "loading" });
+    setState({ status: 'loading' });
     apiClient
-      .get<Incident[]>("/api/v1/incidents")
-      .then((incidents) => setState({ status: "ready", incidents }))
+      .get<Incident[]>('/api/v1/incidents')
+      .then((incidents) => setState({ status: 'ready', incidents }))
       .catch((error: unknown) => {
-        const message = error instanceof ApiError ? error.detail ?? error.message : "Unexpected error";
-        setState({ status: "error", message });
+        const message =
+          error instanceof ApiError ? (error.detail ?? error.message) : 'Unexpected error';
+        setState({ status: 'error', message });
       });
   }, []);
 
@@ -41,11 +42,11 @@ export function IncidentsView() {
     load();
   }, [load]);
 
-  if (state.status === "loading") {
+  if (state.status === 'loading') {
     return <LoadingState rows={6} />;
   }
 
-  if (state.status === "error") {
+  if (state.status === 'error') {
     return <ErrorState description={state.message} onRetry={load} />;
   }
 
@@ -80,7 +81,7 @@ export function IncidentsView() {
             <TableCell>
               <StatusBadge status={incident.status} />
             </TableCell>
-            <TableCell>{incident.assignedUserEmail ?? "Unassigned"}</TableCell>
+            <TableCell>{incident.assignedUserEmail ?? 'Unassigned'}</TableCell>
             <TableCell>{new Date(incident.createdAt).toLocaleString()}</TableCell>
           </TableRow>
         ))}

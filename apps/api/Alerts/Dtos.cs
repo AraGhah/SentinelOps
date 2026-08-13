@@ -8,12 +8,12 @@ public record CreateAlertRequest(
     [Required, MaxLength(200)] string ExternalId,
     [Required, MaxLength(200)] string Source,
     [Required, MaxLength(300)] string Title,
-    string? Description,
+    [MaxLength(10_000)] string? Description,
     IncidentSeverity Severity,
     DateTimeOffset TimestampUtc,
     [Required, MaxLength(100)] string Environment,
-    string? Region,
-    string? Metadata);
+    [MaxLength(200)] string? Region,
+    [MaxLength(10_000)] string? Metadata);
 
 public record AlertResponse(
     Guid Id, Guid IntegrationId, string ExternalId, string Source, string Title, string? Description,

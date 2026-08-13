@@ -5,19 +5,19 @@ namespace SentinelOps.Api.Incidents;
 
 public record CreateIncidentRequest(
     [Required, MaxLength(300)] string Title,
-    string? Description,
+    [MaxLength(10_000)] string? Description,
     IncidentSeverity Severity,
     Guid? ServiceId,
     Guid? AssignedResponderUserId);
 
 public record UpdateIncidentRequest(
     [Required, MaxLength(300)] string Title,
-    string? Description,
+    [MaxLength(10_000)] string? Description,
     IncidentSeverity Severity,
     Guid? ServiceId,
     Guid? AssignedResponderUserId);
 
-public record UpdateIncidentStatusRequest(IncidentStatus Status, string? Note);
+public record UpdateIncidentStatusRequest(IncidentStatus Status, [MaxLength(10_000)] string? Note);
 
 public record IncidentResponse(
     Guid Id, string Title, string? Description, IncidentSeverity Severity, Guid? ServiceId,
@@ -33,7 +33,7 @@ public record IncidentFilters(IncidentStatus? Status, IncidentSeverity? Severity
 public record IncidentStatusHistoryResponse(
     IncidentStatus? FromStatus, IncidentStatus ToStatus, Guid ChangedByUserId, string? Note, DateTimeOffset ChangedAtUtc);
 
-public record CreateCommentRequest([Required] string Body, bool IsInternal);
+public record CreateCommentRequest([Required, MaxLength(10_000)] string Body, bool IsInternal);
 
 public record CommentResponse(Guid Id, Guid AuthorUserId, string Body, bool IsInternal, DateTimeOffset CreatedAtUtc);
 

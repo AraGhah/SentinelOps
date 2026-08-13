@@ -26,8 +26,7 @@ public class EscalationFunction
     private readonly IEventPublisher _eventPublisher;
 
     public EscalationFunction() : this(
-        Environment.GetEnvironmentVariable("CONNECTION_STRING")
-            ?? throw new InvalidOperationException("CONNECTION_STRING environment variable is not set."),
+        DbConnectionStringResolver.FromEnvironment(),
         EventBridgeEventPublisher.FromEnvironment())
     {
     }

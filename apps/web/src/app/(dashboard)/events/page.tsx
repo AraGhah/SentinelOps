@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
-import { Activity } from "lucide-react";
-import { EmptyState } from "@/components/states/empty-state";
+import type { Metadata } from 'next';
+import { Activity } from 'lucide-react';
+import { EmptyState } from '@/components/states/empty-state';
 
 export const metadata: Metadata = {
-  title: "Events — SentinelOps",
+  title: 'Events — SentinelOps',
 };
 
 export default function EventsPage() {

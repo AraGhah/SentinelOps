@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
-import { redirect } from "next/navigation";
-import { MfaForm } from "@/components/auth/mfa-form";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { MfaForm } from '@/components/auth/mfa-form';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export const metadata: Metadata = {
-  title: "Two-factor authentication — SentinelOps",
+  title: 'Two-factor authentication — SentinelOps',
 };
 
 export default async function LoginMfaPage({
@@ -15,7 +15,7 @@ export default async function LoginMfaPage({
   const { email, session } = await searchParams;
 
   if (!email || !session) {
-    redirect("/login");
+    redirect('/login');
   }
 
   return (

@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  format-dotnet:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project:
+          - apps/api/SentinelOps.Api.csproj
+          - apps/api.Tests/SentinelOps.Api.Tests.csproj
+          - apps/workers.Tests/SentinelOps.Workers.Tests.csproj
+          - apps/workers/SentinelOps.Events/SentinelOps.Events.csproj
+          - apps/workers/SentinelOps.Workers.Shared/SentinelOps.Workers.Shared.csproj
+          - apps/workers/SentinelOps.Workers.AlertValidation/SentinelOps.Workers.AlertValidation.csproj
+          - apps/workers/SentinelOps.Workers.Analytics/SentinelOps.Workers.Analytics.csproj
+          - apps/workers/SentinelOps.Workers.AttachmentScan/SentinelOps.Workers.AttachmentScan.csproj
+          - apps/workers/SentinelOps.Workers.AuditLog/SentinelOps.Workers.AuditLog.csproj
+          - apps/workers/SentinelOps.Workers.Dashboard/SentinelOps.Workers.Dashboard.csproj
+          - apps/workers/SentinelOps.Workers.Deduplication/SentinelOps.Workers.Deduplication.csproj
+          - apps/workers/SentinelOps.Workers.Escalation/SentinelOps.Workers.Escalation.csproj
+          - apps/workers/SentinelOps.Workers.IncidentCreation/SentinelOps.Workers.IncidentCreation.csproj
+          - apps/workers/SentinelOps.Workers.Notification/SentinelOps.Workers.Notification.csproj
+          - apps/workers/SentinelOps.Workers.ResponderAssignment/SentinelOps.Workers.ResponderAssignment.csproj
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore ${{ matrix.project }}
+      - run: dotnet format ${{ matrix.project }} --verify-no-changes --no-restore
+
+  format-node:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [infrastructure, apps/web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: ${{ matrix.dir }}
+        run: npm ci
+      - working-directory: ${{ matrix.dir }}
+        run: npx prettier --check .
+
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [infrastructure, apps/web]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: ${{ matrix.dir }}
+        run: npm ci
+      - working-directory: ${{ matrix.dir }}
+        run: npm run lint
+
+  # Covers both "backend unit tests" and "integration tests" — the two are
+  # mixed in the same test projects today (see e.g. apps/api.Tests/ApiTestFixture.cs,
+  # which spins up a real Postgres via Testcontainers). ubuntu-latest runners
+  # have Docker preinstalled, so the Testcontainers-based tests actually run
+  # here (they don't in this repo's dev sandbox, which has no Docker daemon).
+  backend-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [apps/api.Tests, apps/workers.Tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet test ${{ matrix.project }} --configuration Release
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: apps/web
+        run: npm ci
+      - working-directory: apps/web
+        run: npm test
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: apps/web
+        run: npm ci
+      - working-directory: apps/web
+        run: npm run build
+
+  build-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet publish apps/api/SentinelOps.Api.csproj -c Release -o /tmp/publish
+
+  cdk-synth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: infrastructure
+        run: npm ci
+      - working-directory: infrastructure
+        run: npm run build
+      # No AWS credentials needed — every ACM cert is DNS-validated against
+      # an imported (not looked-up) hosted zone specifically so this works.
+      - working-directory: infrastructure
+        run: |
+          npx cdk synth -c env=dev
+          npx cdk synth -c env=staging
+          npx cdk synth -c env=production

@@ -1,0 +1,26 @@
+name: SQL Safety Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  no-raw-sql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The codebase is 100% parameterized EF Core LINQ today (no raw SQL
+      # anywhere) — this is a regression guard, not a fix for an existing
+      # problem. FromSqlInterpolated is excluded: it's EF Core's parameterized
+      # raw-SQL API (FormattableString, auto-parameterizes interpolated
+      # values), unlike FromSqlRaw/ExecuteSqlRaw which accept plain string
+      # concatenation.
+      - name: Fail on unparameterized raw SQL
+        run: |
+          if grep -rn --include=*.cs -E "FromSqlRaw|ExecuteSqlRaw" apps/api apps/workers; then
+            echo "::error::Raw SQL call found (FromSqlRaw/ExecuteSqlRaw) — use FromSqlInterpolated or LINQ instead."
+            exit 1
+          fi
+          echo "No unparameterized raw SQL found."

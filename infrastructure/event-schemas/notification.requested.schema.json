@@ -5,8 +5,25 @@
   "version": "1.0",
   "type": "object",
   "properties": {
-    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
-    "notificationId":{"type":"string","format":"uuid"},"incidentId":{"type":"string","format":"uuid"},"recipientUserId":{"type":"string","format":"uuid"},"channel":{"type":"string"}
+    "eventId": { "type": "string", "format": "uuid" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAtUtc": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "notificationId": { "type": "string", "format": "uuid" },
+    "incidentId": { "type": "string", "format": "uuid" },
+    "recipientUserId": { "type": "string", "format": "uuid" },
+    "channel": { "type": "string" }
   },
-  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","notificationId","incidentId","recipientUserId","channel"]
+  "required": [
+    "eventId",
+    "organizationId",
+    "correlationId",
+    "occurredAtUtc",
+    "schemaVersion",
+    "notificationId",
+    "incidentId",
+    "recipientUserId",
+    "channel"
+  ]
 }

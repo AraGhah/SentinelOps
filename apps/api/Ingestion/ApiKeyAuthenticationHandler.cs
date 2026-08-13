@@ -44,6 +44,11 @@ public class ApiKeyAuthenticationHandler(
         var apiKey = apiKeyValues.ToString();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))).ToLowerInvariant();
 
+        // No org is known yet at this point in the pipeline — resolving the
+        // integration (and therefore its OrganizationId) IS how the caller's
+        // org gets established, so the tenant filter can't apply here.
+        // ApiKeyHash is a per-integration secret (not guessable/enumerable),
+        // so this doesn't expose cross-tenant data beyond "does this key match."
         var integration = await db.Integrations
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(i => i.Id == integrationId && i.ApiKeyHash == hash, Context.RequestAborted);

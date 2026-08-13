@@ -4,12 +4,22 @@ using SentinelOps.Api.Domain;
 namespace SentinelOps.Api.Reports;
 
 public record CreateReportRequest(
-    [Required] string Summary, string? CustomerImpact, string? RootCause, string? DetectionDetails,
-    string? ResolutionDetails, string? PreventionActions, string? FollowUpTasks);
+    [Required, MaxLength(10_000)] string Summary,
+    [MaxLength(10_000)] string? CustomerImpact,
+    [MaxLength(10_000)] string? RootCause,
+    [MaxLength(10_000)] string? DetectionDetails,
+    [MaxLength(10_000)] string? ResolutionDetails,
+    [MaxLength(10_000)] string? PreventionActions,
+    [MaxLength(10_000)] string? FollowUpTasks);
 
 public record UpdateReportRequest(
-    [Required] string Summary, string? CustomerImpact, string? RootCause, string? DetectionDetails,
-    string? ResolutionDetails, string? PreventionActions, string? FollowUpTasks);
+    [Required, MaxLength(10_000)] string Summary,
+    [MaxLength(10_000)] string? CustomerImpact,
+    [MaxLength(10_000)] string? RootCause,
+    [MaxLength(10_000)] string? DetectionDetails,
+    [MaxLength(10_000)] string? ResolutionDetails,
+    [MaxLength(10_000)] string? PreventionActions,
+    [MaxLength(10_000)] string? FollowUpTasks);
 
 public record UpdateReportReviewStatusRequest(ReportReviewStatus ReviewStatus);
 

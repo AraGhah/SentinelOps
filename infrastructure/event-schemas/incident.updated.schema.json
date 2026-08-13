@@ -5,8 +5,23 @@
   "version": "1.0",
   "type": "object",
   "properties": {
-    "eventId":{"type":"string","format":"uuid"},"organizationId":{"type":"string","format":"uuid"},"correlationId":{"type":"string","format":"uuid"},"occurredAtUtc":{"type":"string","format":"date-time"},"schemaVersion":{"type":"string","const":"1.0"},
-    "incidentId":{"type":"string","format":"uuid"},"field":{"type":"string"},"oldValue":{"type":["string","null"]},"newValue":{"type":["string","null"]}
+    "eventId": { "type": "string", "format": "uuid" },
+    "organizationId": { "type": "string", "format": "uuid" },
+    "correlationId": { "type": "string", "format": "uuid" },
+    "occurredAtUtc": { "type": "string", "format": "date-time" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
+    "incidentId": { "type": "string", "format": "uuid" },
+    "field": { "type": "string" },
+    "oldValue": { "type": ["string", "null"] },
+    "newValue": { "type": ["string", "null"] }
   },
-  "required": ["eventId","organizationId","correlationId","occurredAtUtc","schemaVersion","incidentId","field"]
+  "required": [
+    "eventId",
+    "organizationId",
+    "correlationId",
+    "occurredAtUtc",
+    "schemaVersion",
+    "incidentId",
+    "field"
+  ]
 }

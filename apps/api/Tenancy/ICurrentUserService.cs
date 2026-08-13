@@ -30,6 +30,10 @@ public class CurrentUserService(SentinelOpsDbContext db, IHttpContextAccessor ht
             ?? principal.FindFirst("username")?.Value
             ?? throw new InvalidOperationException("Authenticated principal is missing an email/username claim.");
 
+        // User isn't ITenantOwned (a person can belong to multiple orgs via
+        // OrganizationMembership) and carries no OrganizationId, so it has no
+        // query filter to begin with — IgnoreQueryFilters() here is a defensive
+        // no-op, not a tenant-isolation bypass.
         var user = await db.Users.IgnoreQueryFilters().FirstOrDefaultAsync(u => u.CognitoSub == sub, ct);
         if (user is null)
         {

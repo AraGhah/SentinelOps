@@ -111,7 +111,8 @@ public class Function
 
             var request = new IncidentCreationRequest(
                 Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow, detail.AlertId, fingerprint);
-            await _queueSender.SendAsync(_incidentCreationQueueUrl, JsonSerializer.Serialize(request, EventJson.Options), CancellationToken.None);
+            await _queueSender.SendAsync(
+                _incidentCreationQueueUrl, JsonSerializer.Serialize(request, EventJson.Options), detail.CorrelationId, CancellationToken.None);
             return;
         }
 
@@ -162,6 +163,7 @@ public class Function
 
         WorkerLog.Info(context, WorkerName, "Duplicate alert attached to existing incident.",
             detail.EventId, detail.OrganizationId, detail.CorrelationId, new { incidentId = incident.Id, fingerprint });
+        WorkerMetrics.Emit("DuplicateAlerts", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
 
         await _eventPublisher.PublishAsync(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
             new IncidentUpdatedDetail(

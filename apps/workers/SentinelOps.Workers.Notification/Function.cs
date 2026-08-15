@@ -96,6 +96,7 @@ public class Function
                     Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
                     notification.Id, notification.FailureReason),
                 CancellationToken.None);
+            WorkerMetrics.Emit("NotificationFailures", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
             return;
         }
 
@@ -153,6 +154,7 @@ public class Function
                 Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
                 notification.Id, result.FailureReason ?? "Unknown failure."),
             CancellationToken.None);
+        WorkerMetrics.Emit("NotificationFailures", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
     }
 }
 

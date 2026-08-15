@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SentinelOps.Api.Common;
 using SentinelOps.Api.Data;
 using SentinelOps.Api.Domain;
 
@@ -90,6 +91,8 @@ public class AlertIngestionService(SentinelOpsDbContext db, IAlertQueuePublisher
         });
 
         await db.SaveChangesAsync(ct);
+
+        MetricsEmitter.Emit("AlertsReceived", 1);
 
         return new IngestionResult(alertId, correlationId, WasDuplicate: false);
     }

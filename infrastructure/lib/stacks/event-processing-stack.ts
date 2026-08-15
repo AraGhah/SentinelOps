@@ -6,6 +6,7 @@ import * as ses from 'aws-cdk-lib/aws-ses';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as sfn from 'aws-cdk-lib/aws-stepfunctions';
 import * as tasks from 'aws-cdk-lib/aws-stepfunctions-tasks';
@@ -116,6 +117,11 @@ export class EventProcessingStack extends cdk.Stack {
         extraEnv?: Record<string, string>;
       } = {},
     ) => {
+      const logGroup = new logs.LogGroup(this, `${name}LogGroup`, {
+        logGroupName: `/aws/lambda/sentinelops-${kebab(name)}`,
+        retention: props.config.logRetention,
+        removalPolicy: props.config.removalPolicy.compute,
+      });
       const fn = new lambda.Function(this, `${name}Function`, {
         functionName: `sentinelops-${kebab(name)}`,
         runtime: lambda.Runtime.DOTNET_10,
@@ -130,6 +136,14 @@ export class EventProcessingStack extends cdk.Stack {
         // cluster apps/api uses, so this caps how many concurrent connections
         // a burst of messages can open.
         reservedConcurrentExecutions: opts.reservedConcurrency ?? 5,
+        logGroup,
+        // ACTIVE (not PASS_THROUGH) so each invocation is sampled and traced
+        // even when nothing upstream already put a trace header on it — SQS
+        // deliveries don't propagate one. Combined with
+        // WorkerXRayInitializer's AWSSDKHandler.RegisterXRayForAllServices()
+        // module initializer (SentinelOps.Workers.Shared), every AWS SDK call
+        // a worker makes shows up as a subsegment of its invocation.
+        tracing: lambda.Tracing.ACTIVE,
         vpc,
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         securityGroups: [ecsSecurityGroup],
@@ -324,6 +338,12 @@ export class EventProcessingStack extends cdk.Stack {
       memorySize: 512,
       timeout: cdk.Duration.seconds(30),
       reservedConcurrentExecutions: 5,
+      logGroup: new logs.LogGroup(this, 'EscalationLogGroup', {
+        logGroupName: '/aws/lambda/sentinelops-escalation',
+        retention: props.config.logRetention,
+        removalPolicy: props.config.removalPolicy.compute,
+      }),
+      tracing: lambda.Tracing.ACTIVE,
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [ecsSecurityGroup],
@@ -345,6 +365,12 @@ export class EventProcessingStack extends cdk.Stack {
       memorySize: 512,
       timeout: cdk.Duration.seconds(30),
       reservedConcurrentExecutions: 5,
+      logGroup: new logs.LogGroup(this, 'EscalationRestartLogGroup', {
+        logGroupName: '/aws/lambda/sentinelops-escalation-restart',
+        retention: props.config.logRetention,
+        removalPolicy: props.config.removalPolicy.compute,
+      }),
+      tracing: lambda.Tracing.ACTIVE,
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [ecsSecurityGroup],

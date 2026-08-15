@@ -63,14 +63,14 @@ public class FakeEventPublisher : IEventPublisher
 
 public class FakeQueueSender : IQueueSender
 {
-    public record SentMessage(string QueueUrl, string Body);
+    public record SentMessage(string QueueUrl, string Body, Guid CorrelationId);
 
     private readonly ConcurrentBag<SentMessage> _sent = [];
     public IReadOnlyCollection<SentMessage> Sent => _sent;
 
-    public Task SendAsync(string queueUrl, string body, CancellationToken ct)
+    public Task SendAsync(string queueUrl, string body, Guid correlationId, CancellationToken ct)
     {
-        _sent.Add(new SentMessage(queueUrl, body));
+        _sent.Add(new SentMessage(queueUrl, body, correlationId));
         return Task.CompletedTask;
     }
 }

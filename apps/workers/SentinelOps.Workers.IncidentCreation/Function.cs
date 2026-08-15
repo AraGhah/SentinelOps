@@ -111,6 +111,7 @@ public class Function
 
         WorkerLog.Info(context, WorkerName, "Incident created.",
             request.EventId, request.OrganizationId, request.CorrelationId, new { incidentId = incident.Id });
+        WorkerMetrics.Emit("IncidentsCreated", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
 
         await _eventPublisher.PublishAsync(EventSources.IncidentCreationWorker, EventTypes.IncidentCreated,
             new IncidentCreatedDetail(

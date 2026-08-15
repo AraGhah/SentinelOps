@@ -154,10 +154,14 @@ public class IncidentsController(
         if (request.Status == IncidentStatus.Acknowledged && incident.AcknowledgedAtUtc is null)
         {
             incident.AcknowledgedAtUtc = DateTimeOffset.UtcNow;
+            MetricsEmitter.Emit(
+                "AcknowledgementTime", (incident.AcknowledgedAtUtc.Value - incident.CreatedAtUtc).TotalSeconds, "Seconds");
         }
         if (request.Status == IncidentStatus.Resolved)
         {
             incident.ResolvedAtUtc = DateTimeOffset.UtcNow;
+            MetricsEmitter.Emit(
+                "ResolutionTime", (incident.ResolvedAtUtc.Value - incident.CreatedAtUtc).TotalSeconds, "Seconds");
         }
         else if (request.Status == IncidentStatus.Reopened)
         {

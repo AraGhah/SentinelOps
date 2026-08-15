@@ -1,4 +1,6 @@
 using System.Threading.RateLimiting;
+using Amazon.XRay.Recorder.Handlers.AspNetCore;
+using Amazon.XRay.Recorder.Handlers.AwsSdk;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -6,6 +8,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Amazon.S3;
+using Npgsql;
 using SentinelOps.Api.Attachments;
 using SentinelOps.Api.Auth;
 using SentinelOps.Api.Common;
@@ -20,7 +23,28 @@ using SentinelOps.Events;
 // QuestPDF or every document-generation call throws.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
+// Must run before any AmazonServiceClient is constructed (every registration
+// below that builds one) — patches the SDK's request pipeline so each AWS
+// call becomes an X-Ray subsegment of whatever segment UseXRay opened for
+// the current request. Harmless with no X-Ray daemon listening (e.g. local
+// `dotnet run`): segments are sent over connectionless UDP and just drop.
+AWSSDKHandler.RegisterXRayForAllServices();
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Structured JSON logs to stdout — ECS ships them to ApiLogGroup via the
+// awslogs driver (see ApiStack). Replaces the default plain-text console
+// formatter; Debug/EventSource/EventLog providers from CreateBuilder's
+// defaults are dropped along with it; that's fine because this always runs
+// as a container, and MetricsEmitter's EMF lines below deliberately bypass
+// this pipeline entirely so they stay unwrapped JSON.
+builder.Logging.ClearProviders();
+builder.Logging.AddJsonConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+    options.UseUtcTimestamp = true;
+});
 
 // Overrides ConnectionStrings:SentinelOpsDb from the ECS-injected Secrets
 // Manager JSON when running in AWS; no-op locally (appsettings.json already
@@ -117,8 +141,19 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-builder.Services.AddDbContext<SentinelOpsDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("SentinelOpsDb")));
+// A shared NpgsqlDataSource (rather than handing UseNpgsql a bare connection
+// string) is what DatabaseConnectionsMetricService opens its monitoring
+// connection through. Built lazily inside this factory delegate, not as a
+// top-level statement — ApiTestFixture overrides ConnectionStrings:SentinelOpsDb
+// via WebApplicationFactory's ConfigureAppConfiguration, which only takes
+// effect by the time DI resolves services, not at the point Program.cs's own
+// top-level code runs; reading builder.Configuration here immediately would
+// have captured the appsettings.json value instead of the test container's.
+builder.Services.AddSingleton(sp =>
+    new NpgsqlDataSourceBuilder(sp.GetRequiredService<IConfiguration>().GetConnectionString("SentinelOpsDb")).Build());
+builder.Services.AddDbContext<SentinelOpsDbContext>((sp, options) =>
+    options.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
+builder.Services.AddHostedService<DatabaseConnectionsMetricService>();
 
 builder.Services
     .AddOptions<CognitoOptions>()
@@ -199,6 +234,12 @@ builder.Services.AddAuthorization(options =>
 });
 
 var app = builder.Build();
+
+// Opens one X-Ray segment per request, wrapping every AWS SDK subsegment
+// AWSSDKHandler.RegisterXRayForAllServices() (above) records during it —
+// as early in the pipeline as possible so the segment covers the whole
+// request, exception handling included.
+app.UseXRay("SentinelOpsApi");
 
 app.UseExceptionHandler();
 

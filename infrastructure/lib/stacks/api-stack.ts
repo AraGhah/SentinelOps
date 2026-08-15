@@ -121,6 +121,27 @@ export class ApiStack extends cdk.Stack {
       stopTimeout: cdk.Duration.seconds(30),
     });
 
+    // --- X-Ray tracing ---------------------------------------------------------
+    // Fargate has no host-level X-Ray daemon (unlike EC2 launch type), so the
+    // daemon has to run as its own container in the task — Program.cs's
+    // AWSSDKHandler.RegisterXRayForAllServices() + UseXRay(...) middleware
+    // send segments to 127.0.0.1:2000 (containers in one Fargate task share a
+    // network namespace), which this container relays to the X-Ray API.
+    apiTaskDefinition.addContainer('XRayDaemonContainer', {
+      image: ecs.ContainerImage.fromRegistry('public.ecr.aws/xray/aws-xray-daemon:latest'),
+      cpu: 32,
+      memoryLimitMiB: 256,
+      essential: false,
+      portMappings: [{ containerPort: 2000, protocol: ecs.Protocol.UDP }],
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'xray', logGroup: props.apiLogGroup }),
+    });
+    // Task role (not execution role): the daemon assumes the running task's
+    // own IAM identity via the container credentials endpoint to call
+    // xray:PutTraceSegments/PutTelemetryRecords.
+    apiTaskRole.addManagedPolicy(
+      iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess'),
+    );
+
     const apiService = new ecs.FargateService(this, 'ApiService', {
       cluster: apiCluster,
       taskDefinition: apiTaskDefinition,
@@ -363,6 +384,12 @@ export class ApiStack extends cdk.Stack {
         memorySize: 256,
         timeout: cdk.Duration.seconds(15),
         reservedConcurrentExecutions: 10,
+        logGroup: new logs.LogGroup(this, `Dashboard${name}LogGroup`, {
+          logGroupName: `/aws/lambda/sentinelops-dashboard-${kebab(name)}`,
+          retention: props.config.logRetention,
+          removalPolicy: props.config.removalPolicy.compute,
+        }),
+        tracing: lambda.Tracing.ACTIVE,
         // Only ConnectFunction talks to Postgres (to resolve org membership on
         // connect) — Disconnect/Broadcast only touch DynamoDB, so they stay
         // outside the VPC to avoid the unnecessary ENI/cold-start cost.

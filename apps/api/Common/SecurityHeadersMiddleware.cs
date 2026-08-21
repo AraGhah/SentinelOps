@@ -1,8 +1,7 @@
 namespace SentinelOps.Api.Common;
 
-// SentinelOps.Api is a pure JSON API — it never renders HTML of its own — so
-// the CSP is as strict as CSP gets. If that ever changes (e.g. serving
-// Swagger UI outside Development), this policy needs revisiting.
+// Pure JSON API, never renders HTML, so CSP is maximally strict. Revisit if that changes
+// (e.g. serving Swagger UI outside Development).
 public class SecurityHeadersMiddleware(RequestDelegate next)
 {
     public async Task InvokeAsync(HttpContext context)

@@ -3,13 +3,9 @@ using Amazon.Lambda.SQSEvents;
 
 namespace SentinelOps.Workers.Shared;
 
-// Every worker's SqsEventSource is configured with reportBatchItemFailures: true
-// (see workerFunction() in event-processing-stack.ts) so that one bad message
-// (malformed body, unknown schema version, a transient DB error, ...) only
-// gets that message redelivered — not the other, unrelated messages in the
-// same up-to-10-message batch. That guarantee only holds if the handler
-// actually returns a partial SQSBatchResponse instead of letting an exception
-// from record 3 abort records 4-10 outright, which is what this wraps.
+// Workers run with reportBatchItemFailures: true, so only failed messages get
+// redelivered. Must return a partial SQSBatchResponse instead of throwing,
+// or one bad record fails the whole batch.
 public static class SqsBatchProcessor
 {
     public static async Task<SQSBatchResponse> RunAsync(

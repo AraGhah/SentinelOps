@@ -3,8 +3,7 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Workers.Tests;
 
-// Workers query straight against SentinelOpsDbContext (no HTTP layer, unlike
-// apps/api.Tests), so test data is seeded the same way: directly through EF.
+// Workers query straight against SentinelOpsDbContext (no HTTP layer), so seed directly through EF.
 public static class TestData
 {
     public static Organization NewOrganization(SentinelOpsDbContext db)

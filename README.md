@@ -57,7 +57,7 @@ sentinelops/
 
 ## Deployment
 
-CI/CD runs via GitHub Actions (`.github/workflows/ci.yml`, `cd.yml`) — every push builds, tests, and `cdk synth`s all three environments (dev/staging/production); pushes to `main` additionally build and push Docker images, deploy to staging, run e2e smoke tests, then deploy to production behind a required-reviewer approval gate. See [docs/deployment/rollback.md](docs/deployment/rollback.md) for rollback procedures and the one-time AWS/GitHub setup this pipeline needs before it can run.
+CI/CD runs via GitHub Actions (`.github/workflows/ci.yml`, `cd.yml`). Every push builds, tests, and `cdk synth`s all three environments (dev/staging/production). Pushes to `main` additionally build and push Docker images, deploy to staging, run e2e smoke tests, then deploy to production behind a required-reviewer approval gate. See [docs/deployment/rollback.md](docs/deployment/rollback.md) for rollback procedures and the one-time AWS/GitHub setup this pipeline needs before it can run.
 
 ## Cost
 

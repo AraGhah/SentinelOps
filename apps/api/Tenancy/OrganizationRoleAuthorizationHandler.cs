@@ -4,11 +4,9 @@ using SentinelOps.Api.Data;
 
 namespace SentinelOps.Api.Tenancy;
 
-// Resolves the organization from the "orgId" route value, looks up the caller's
-// active membership for it, and — on success — populates ICurrentOrganizationAccessor
-// so the DbContext's tenant query filters see the same organization the authorization
-// check just verified. This is the single place that decides "is this org id + this
-// caller allowed," so controllers never need to re-check membership themselves.
+// Resolves the org from the "orgId" route value, checks the caller's active membership,
+// and on success populates ICurrentOrganizationAccessor for the DbContext's tenant filters.
+// Single place that decides org access, so controllers don't re-check membership.
 public class OrganizationRoleAuthorizationHandler(
     SentinelOpsDbContext db,
     ICurrentUserService currentUserService,
@@ -29,10 +27,8 @@ public class OrganizationRoleAuthorizationHandler(
 
         var user = await currentUserService.GetOrProvisionAsync(httpContext?.RequestAborted ?? default);
 
-        // ICurrentOrganizationAccessor isn't populated yet at this point — this
-        // lookup is what populates it — so the tenant filter (which reads it)
-        // can't apply. Scoped explicitly to this one organizationId + userId
-        // pair, never a listing, so it can't leak other orgs' membership rows.
+        // ICurrentOrganizationAccessor isn't populated yet (this lookup is what populates it),
+        // so the tenant filter can't apply; scoped explicitly to one org+user pair instead.
         var membership = await db.OrganizationMemberships
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(m =>

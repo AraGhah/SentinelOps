@@ -3,9 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace SentinelOps.Events;
 
-// Shape of an SQS message body when the queue is an EventBridge rule target —
-// the full EventBridge event, not just our `detail` payload. Workers parse this
-// first, then deserialize `Detail` into the specific record for their event type.
+// SQS message body when the queue is an EventBridge rule target: the full
+// EventBridge event, not just our `detail` payload.
 public record EventBridgeEnvelope(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("detail-type")] string DetailType,

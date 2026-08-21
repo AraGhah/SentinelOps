@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// api-client.ts reads NEXT_PUBLIC_API_URL once, at module-load time — each
-// test needs a fresh module instance (vi.resetModules) to exercise both the
-// fallback and the env-var-override paths.
+// api-client.ts reads NEXT_PUBLIC_API_URL at module-load time, so each test needs vi.resetModules() for a fresh instance.
 describe('apiClient base URL resolution', () => {
   const originalEnv = process.env.NEXT_PUBLIC_API_URL;
 

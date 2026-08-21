@@ -7,13 +7,11 @@ using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.AttachmentScan;
 
-// Consumes GuardDuty Malware Protection for S3 "Object Scan Result" findings
-// (arrive on the account's default EventBridge bus, not sentinelops-events —
-// see AttachmentScanResultRule in infrastructure-stack.ts) and updates the
-// matching Attachment's ScanStatus. The finding itself doesn't carry an
-// OrganizationId, so this recovers one from the object key — every key an
-// upload-url request mints follows AttachmentPolicy.StorageKeyPrefix's
-// "orgs/{orgId:N}/incidents/{incidentId:N}/..." shape.
+// Consumes GuardDuty Malware Protection "Object Scan Result" findings (default
+// EventBridge bus, see AttachmentScanResultRule in infrastructure-stack.ts)
+// and updates the matching Attachment's ScanStatus. The finding has no
+// OrganizationId, so it's recovered from the object key
+// (AttachmentPolicy.StorageKeyPrefix's "orgs/{orgId:N}/incidents/{id:N}/..." shape).
 public class Function
 {
     public const string WorkerName = "attachment-scan";
@@ -56,8 +54,7 @@ public class Function
             return;
         }
 
-        // No outbound publish here — the row write is the entire unit of
-        // work, so the claim is Completed in the same commit either way.
+        // No outbound publish, so the claim completes in the same commit either way.
         claimRecord.Completed = true;
 
         var attachment = await db.Attachments.FirstOrDefaultAsync(a => a.StorageKey == finding.ObjectKey);

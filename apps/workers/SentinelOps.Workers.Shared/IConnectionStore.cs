@@ -4,10 +4,9 @@ using Amazon.DynamoDBv2.Model;
 
 namespace SentinelOps.Workers.Shared;
 
-// Tracks live WebSocket connections for the real-time dashboard (section 19).
-// DynamoDB rather than Postgres for the same reason as the alert-fingerprint
-// store: high-churn, ephemeral, keyed by a single id, with a TTL safety net —
-// not the kind of data the relational store needs to own.
+// Tracks live WebSocket connections for the real-time dashboard. DynamoDB
+// rather than Postgres: high-churn, ephemeral, keyed by a single id, with a
+// TTL safety net.
 public interface IConnectionStore
 {
     Task AddAsync(string connectionId, Guid organizationId, TimeSpan ttl, CancellationToken ct);

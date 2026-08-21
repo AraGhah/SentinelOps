@@ -17,9 +17,7 @@ public class CognitoAuthService
     public CognitoAuthService(IOptions<CognitoOptions> options)
     {
         _options = options.Value;
-        // Register/login/reset/MFA operations are authenticated via the app client ID
-        // and bearer tokens, not SigV4 — anonymous credentials are sufficient and mean
-        // the API never needs its own AWS access keys for auth flows.
+        // Auth flows use the app client ID + bearer tokens, not SigV4, so anonymous credentials suffice.
         _client = new AmazonCognitoIdentityProviderClient(
             new AnonymousAWSCredentials(),
             RegionEndpoint.GetBySystemName(_options.Region));

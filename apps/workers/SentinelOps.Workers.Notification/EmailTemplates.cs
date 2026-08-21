@@ -5,8 +5,6 @@ namespace SentinelOps.Workers.Notification;
 
 public record RenderedEmail(string Subject, string Html, string Text);
 
-// Deliberately plain string formatting rather than a templating engine —
-// three short, fixed-shape emails don't earn the dependency.
 public static class EmailTemplates
 {
     public static RenderedEmail Render(NotificationKind kind, Guid incidentId, string incidentTitle, IncidentSeverity severity, int? escalationLevel)

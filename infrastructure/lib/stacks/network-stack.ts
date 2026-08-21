@@ -16,16 +16,13 @@ export class NetworkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
 
-    // Three-tier VPC: ECS/Lambda run in PrivateApp (needs NAT egress for ECR
-    // pulls and outbound AWS SDK calls); Aurora sits in PrivateDb, which is
-    // PRIVATE_ISOLATED — no NAT route at all — so the database has no path to
-    // or from the public internet, satisfying "DB in private subnets"
-    // literally rather than just "not directly internet-facing."
+    // Three-tier VPC: ECS/Lambda run in PrivateApp (NAT egress for ECR pulls and AWS
+    // SDK calls); Aurora sits in PrivateDb (PRIVATE_ISOLATED, no NAT route at all) so
+    // the DB has no path to/from the public internet.
     this.vpc = new ec2.Vpc(this, 'SentinelOpsVpc', {
       vpcName: 'sentinelops-vpc',
       maxAzs: 2,
-      // Single NAT gateway is a deliberate cost tradeoff (one fewer AZ of NAT
-      // redundancy) — see docs/security/security-assumptions.md.
+      // Single NAT gateway is a cost tradeoff (one fewer AZ of redundancy).
       natGateways: props.config.natGateways,
       subnetConfiguration: [
         { name: 'Public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
@@ -34,8 +31,7 @@ export class NetworkStack extends cdk.Stack {
       ],
     });
 
-    // Security groups reference each other by ID, never by CIDR, so access is
-    // always "the other tier's SG" rather than an IP range that could drift.
+    // Security groups reference each other by ID, never by CIDR.
     this.albSecurityGroup = new ec2.SecurityGroup(this, 'AlbSecurityGroup', {
       vpc: this.vpc,
       description: 'SentinelOps API ALB - private, reachable only from the API Gateway VPC Link',
@@ -46,14 +42,9 @@ export class NetworkStack extends cdk.Stack {
       description: 'SentinelOps API ECS tasks and DB-touching Lambda workers',
       allowAllOutbound: false,
     });
-    // The RDS/rotation security groups live in DatabaseStack, not here — the
-    // SecretRotation construct mutates the RDS security group's ingress
-    // rules using a dynamic (cluster-endpoint-derived) port token, and doing
-    // that across a stack boundary creates a real circular dependency
-    // (DatabaseStack already depends on this stack for the VPC/ecsSecurityGroup).
-    // Keeping both security groups in the same stack as the cluster avoids it.
-    // API Gateway's VpcLink ENIs — the only thing allowed to reach the now-
-    // private API ALB. See ApiStack for the HTTP API + VpcLink construction.
+    // RDS/rotation security groups live in DatabaseStack, not here: SecretRotation
+    // mutates the RDS SG's ingress rules with a dynamic port token, and doing that
+    // across a stack boundary would create a circular dependency.
     this.vpcLinkSecurityGroup = new ec2.SecurityGroup(this, 'VpcLinkSecurityGroup', {
       vpc: this.vpc,
       description: 'API Gateway VpcLink for the private API ALB',
@@ -71,14 +62,10 @@ export class NetworkStack extends cdk.Stack {
       ec2.Port.tcp(5000),
       'API containers from ALB',
     );
-    // CIDR-scoped (to this VPC only), not SG-reference-scoped (to
-    // DatabaseStack's rdsSecurityGroup specifically) — deliberately, so this
-    // rule stays entirely self-contained within NetworkStack. Referencing
-    // rdsSecurityGroup's ID here would make NetworkStack depend on
-    // DatabaseStack, which already depends on NetworkStack for the VPC and
-    // this very security group — a cycle. DatabaseStack adds the matching
-    // SG-reference-scoped ingress rule on its own rdsSecurityGroup instead
-    // (see database-stack.ts), which is one-directional and cycle-free.
+    // CIDR-scoped, not SG-reference-scoped: referencing DatabaseStack's
+    // rdsSecurityGroup here would make NetworkStack depend on DatabaseStack, which
+    // already depends on NetworkStack for the VPC, a cycle. DatabaseStack adds the
+    // matching ingress rule on rdsSecurityGroup instead (one-directional).
     this.ecsSecurityGroup.addEgressRule(
       ec2.Peer.ipv4(this.vpc.vpcCidrBlock),
       ec2.Port.tcp(5432),

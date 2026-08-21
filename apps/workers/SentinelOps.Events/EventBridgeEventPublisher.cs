@@ -26,9 +26,8 @@ public class EventBridgeEventPublisher : IEventPublisher
     }
 
     // Workers run as bare Lambda functions with no DI container, so they read
-    // their EventBridgeOptions straight from the environment variables the CDK
-    // stack sets on the function (EVENT_BUS_NAME / AWS_REGION — the latter is
-    // also a Lambda-managed variable, populated automatically at runtime).
+    // EventBridgeOptions from env vars the CDK stack sets on the function
+    // (AWS_REGION is also Lambda-managed and set automatically).
     public static EventBridgeEventPublisher FromEnvironment()
     {
         var eventBusName = Environment.GetEnvironmentVariable("EVENT_BUS_NAME")

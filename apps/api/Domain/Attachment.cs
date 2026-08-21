@@ -1,9 +1,7 @@
 namespace SentinelOps.Api.Domain;
 
-// Pending until the GuardDuty Malware Protection finding for this object's
-// upload arrives (see SentinelOps.Workers.AttachmentScan); download presigning
-// refuses anything other than Clean. Objects land in S3 under an
-// org/incident-scoped key (StorageKey) — see IAttachmentStorageService.
+// Pending until the GuardDuty Malware Protection finding arrives; download presigning
+// refuses anything other than Clean.
 public enum AttachmentScanStatus { Pending, Clean, Infected, Failed }
 
 public class Attachment : ITenantOwned

@@ -39,7 +39,6 @@ public record CommentResponse(Guid Id, Guid AuthorUserId, string Body, bool IsIn
 
 public record AddTagRequest([Required, MaxLength(100)] string Tag);
 
-// ActorUserId is null for automated system actions (assignment, escalation,
-// notification delivery) — the timeline UI renders those as "System".
+// ActorUserId is null for automated system actions; the timeline UI renders those as "System".
 public record IncidentEventResponse(
     Guid Id, IncidentEventType EventType, Guid? ActorUserId, string? Summary, string? Details, DateTimeOffset OccurredAtUtc);

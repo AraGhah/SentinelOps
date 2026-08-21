@@ -39,9 +39,7 @@ public class AttachmentsController(
         return Ok(ToResponse(attachment));
     }
 
-    // Step 1 of the upload flow: mint a presigned PUT URL scoped to this
-    // org/incident, without creating any row yet — the row is only created
-    // once the client confirms the upload via Create below.
+    // Step 1: mint a presigned PUT URL. No row is created until Create confirms the upload.
     [HttpPost("upload-url")]
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<UploadUrlResponse>> CreateUploadUrl(
@@ -62,10 +60,8 @@ public class AttachmentsController(
         return Ok(new UploadUrlResponse(upload.StorageKey, upload.UploadUrl, upload.ExpiresAtUtc));
     }
 
-    // Step 2: the client has PUT the bytes to the presigned URL; this records
-    // the metadata row. ScanStatus starts Pending — GuardDuty Malware
-    // Protection scans the object on upload and SentinelOps.Workers.AttachmentScan
-    // updates it once a verdict is in (see infrastructure-stack.ts).
+    // Step 2: records the metadata row after the client PUTs the bytes. ScanStatus starts
+    // Pending; SentinelOps.Workers.AttachmentScan updates it once GuardDuty has a verdict.
     [HttpPost]
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<AttachmentResponse>> Create(
@@ -82,19 +78,13 @@ public class AttachmentsController(
                 statusCode: 400);
         }
 
-        // Ownership validation: the key must be one this org/incident's own
-        // upload-url step minted, not a key borrowed from another tenant or
-        // another incident's attachments.
+        // Reject keys borrowed from another tenant/incident.
         if (!request.StorageKey.StartsWith(AttachmentPolicy.StorageKeyPrefix(orgId, incidentId), StringComparison.Ordinal))
         {
             return Problem(title: "Attachment rejected", detail: "Storage key does not belong to this incident.", statusCode: 400);
         }
 
-        // The presigned PUT URL only binds Content-Type + SSE header, not
-        // size, so SizeBytes above is just the client's claim. Look up the
-        // actual object S3 received and use that as the source of truth —
-        // reject if it blows the cap, and persist the real size regardless
-        // of what the client claimed.
+        // SizeBytes is just the client's claim; use the actual S3 object size as source of truth.
         var actualSizeBytes = await storage.GetObjectSizeAsync(request.StorageKey, ct);
         if (actualSizeBytes is null)
         {

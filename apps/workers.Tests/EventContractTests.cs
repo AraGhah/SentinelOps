@@ -4,13 +4,8 @@ using SentinelOps.Events;
 
 namespace SentinelOps.Workers.Tests;
 
-// Contract tests for the wire shape SentinelOps.Events publishes onto
-// EventBridge. infrastructure/event-schemas/*.schema.json is the documented
-// source of truth an external consumer would validate against — these tests
-// catch drift between that published contract and what the C# records in
-// EventDetails.cs actually serialize to, which nothing else in the build
-// verifies (EventSchemaValidator only checks a handful of runtime invariants,
-// not the full shape).
+// Catches drift between infrastructure/event-schemas/*.schema.json (the published contract)
+// and what EventDetails.cs actually serializes to.
 public class EventContractTests
 {
     private static readonly string SchemaDirectory = FindSchemaDirectory();
@@ -57,11 +52,7 @@ public class EventContractTests
         Assert.Contains(version, EventSchemaValidator.SupportedVersions);
     }
 
-    // Event-version compatibility: a detail stamped with a version this build
-    // doesn't know about must fail both the runtime check every worker makes
-    // before acting on a message, and schema validation against the "const"
-    // the published contract pins schemaVersion to — the two checks should
-    // never disagree about whether a version is acceptable.
+    // Runtime version check and schema validation must agree on rejecting an unknown version.
     [Fact]
     public void UnknownSchemaVersion_FailsBothRuntimeAndSchemaValidation()
     {

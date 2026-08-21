@@ -176,9 +176,7 @@ public class EscalationFunctionTests(WorkerTestFixture fixture)
     [Fact]
     public async Task AdvanceLevel_RetriedForSameLevel_DoesNotDoubleNotify()
     {
-        // Simulates Step Functions retrying the same task after a transient
-        // error — the second call must not create a second Notification or
-        // publish a second IncidentEscalated for the same level.
+        // Step Functions can retry the same task after a transient error; must not double-notify.
         var orgId = Guid.NewGuid();
         var level2ResponderId = Guid.NewGuid();
         Incident incident;

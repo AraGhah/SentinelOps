@@ -5,11 +5,8 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Api.Reports;
 
-// Composed directly from the report's fields with QuestPDF (a native .NET PDF
-// library) rather than converting ReportHtmlRenderer's output — there's no
-// headless-browser/wkhtmltopdf dependency available in this Lambda-friendly
-// stack, so the two renderers intentionally produce the same content from the
-// same source data via two independent code paths.
+// Composed directly with QuestPDF rather than converting ReportHtmlRenderer's output:
+// no headless-browser/wkhtmltopdf dependency in this Lambda-friendly stack.
 public static class ReportPdfRenderer
 {
     public static byte[] Render(Incident incident, Report report, List<IncidentEvent> timeline)

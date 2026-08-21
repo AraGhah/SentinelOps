@@ -5,14 +5,10 @@ using Amazon.SecretsManager.Model;
 
 namespace SentinelOps.Workers.Shared;
 
-// Workers used to read a plaintext CONNECTION_STRING env var populated from a
-// CFN parameter. That's gone — CDK now grants each function read access to
-// the RDS-generated Secrets Manager secret (DB_SECRET_ARN) instead, which is
-// what makes credential rotation possible without redeploying every Lambda.
-// Resolved once per cold start (constructors call this synchronously, same
-// as EventBridgeEventPublisher.FromEnvironment), so a rotated secret only
-// takes effect on the function's next cold start — see
-// docs/security/security-assumptions.md for that tradeoff.
+// Reads the RDS-generated Secrets Manager secret (DB_SECRET_ARN) rather than
+// a plaintext connection string, so credentials can rotate without
+// redeploying. Resolved once per cold start, so a rotated secret only takes
+// effect on the next cold start — see docs/security/security-assumptions.md.
 public static class DbConnectionStringResolver
 {
     public static string FromEnvironment()

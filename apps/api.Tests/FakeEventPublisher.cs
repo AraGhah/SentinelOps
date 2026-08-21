@@ -3,8 +3,8 @@ using SentinelOps.Events;
 
 namespace SentinelOps.Api.Tests;
 
-// Replaces EventBridgeEventPublisher in the test host so tests don't need a real
-// EventBridge bus — records what would have been published for assertions instead.
+// Replaces EventBridgeEventPublisher in the test host; records what would have been
+// published for assertions instead.
 public class FakeEventPublisher : IEventPublisher
 {
     public record PublishedEvent(string Source, string DetailType, IEventDetail Detail);

@@ -3,16 +3,11 @@ using SentinelOps.Events;
 
 namespace SentinelOps.Workers.Shared;
 
-// A single outbound side-effect (publish an EventBridge event, send a queue
-// message, or start a Step Functions execution) that a worker still owes the
-// rest of the system once its business-state write has committed. See
-// IdempotencyGuard and ProcessedWorkerEvent.PendingOutboxJson for why this
-// gets captured and persisted *before* the business SaveChangesAsync, rather
-// than built fresh each attempt: on redelivery after a crash between "business
-// state committed" and "publish succeeded," the worker must retry exactly
-// these already-serialized payloads (same EventIds and all) instead of
-// re-running business logic that would produce new ones or, worse, duplicate
-// records.
+// A pending outbound side-effect (EventBridge event, queue message, or Step
+// Functions execution) owed once the business-state write commits. Persisted
+// before SaveChangesAsync so a crash between commit and publish can replay
+// the same serialized payloads on redelivery instead of re-running business
+// logic and producing duplicates. See IdempotencyGuard.
 public record OutboxItem(
     string Kind,
     string? Source,
@@ -46,10 +41,9 @@ public record OutboxItem(
             : JsonSerializer.Deserialize<List<OutboxItem>>(json, EventJson.Options) ?? [];
 }
 
-// Publishes/sends every item captured in a worker's pending outbox. Used both
-// on the "happy path" right after the business SaveChangesAsync (with the
-// items still fresh in memory) and on redelivery, after deserializing them
-// back out of ProcessedWorkerEvent.PendingOutboxJson.
+// Publishes/sends every item in a worker's pending outbox — right after
+// SaveChangesAsync, or on redelivery after deserializing from
+// ProcessedWorkerEvent.PendingOutboxJson.
 public static class OutboxPublisher
 {
     public static async Task PublishAllAsync(

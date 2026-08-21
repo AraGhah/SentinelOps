@@ -3,8 +3,8 @@ using SentinelOps.Api.Ingestion;
 
 namespace SentinelOps.Api.Tests;
 
-// Replaces SqsAlertQueuePublisher in the test host so tests don't need a real
-// SQS queue — records what would have been published for assertions instead.
+// Replaces SqsAlertQueuePublisher in the test host; records what would have been
+// published for assertions instead.
 public class FakeAlertQueuePublisher : IAlertQueuePublisher
 {
     private readonly ConcurrentBag<AlertQueueMessage> _published = [];

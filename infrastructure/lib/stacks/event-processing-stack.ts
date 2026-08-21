@@ -43,17 +43,16 @@ export class EventProcessingStack extends cdk.Stack {
     const { vpc, ecsSecurityGroup, dbSecret, fingerprintTable } = props;
 
     // --- Event-driven backbone -------------------------------------------
-    // Custom bus (not the default bus) so alert/incident/notification events
-    // are isolated from anything else running in this account, and so rules
-    // here can safely use wildcard source/detail-type matches (analytics,
-    // audit-log) without catching unrelated traffic.
+    // Custom bus (not the default bus) so events are isolated from everything else in
+    // this account, and wildcard-matching rules (analytics, audit-log) can't catch
+    // unrelated traffic.
     this.eventBus = new events.EventBus(this, 'SentinelOpsEventBus', {
       eventBusName: 'sentinelops-events',
     });
 
     new cdk.CfnOutput(this, 'EventBusName', {
       value: this.eventBus.eventBusName,
-      description: 'EventBridge bus name — set as Aws__EventBridge__EventBusName on apps/api',
+      description: 'EventBridge bus name, set as Aws__EventBridge__EventBusName on apps/api',
     });
     new cdk.CfnOutput(this, 'EventBusArn', { value: this.eventBus.eventBusArn });
 
@@ -73,9 +72,8 @@ export class EventProcessingStack extends cdk.Stack {
     };
 
     // --- Notification email -------------------------------------------------
-    // Domain verification via SES's own DKIM records rather than a
-    // Route53-hosted-zone identity — the three CNAME outputs below have to be
-    // added to the domain's DNS manually before SES will accept sends from it.
+    // Domain verification via SES's own DKIM records: the three CNAME outputs below
+    // must be added to the domain's DNS manually before SES accepts sends from it.
     const notificationDomainName = new cdk.CfnParameter(this, 'NotificationDomainName', {
       type: 'String',
       default: props.config.notificationDomainNameDefault,
@@ -101,11 +99,9 @@ export class EventProcessingStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'NotificationSenderEmail', { value: senderEmail });
 
-    // Every worker resolves its Postgres connection string at cold start by
-    // reading this secret's ARN and calling Secrets Manager directly (see
-    // DbConnectionStringResolver in SentinelOps.Workers.Shared). A rotated
-    // secret takes effect on each function's next cold start (see
-    // docs/security/security-assumptions.md for the propagation-lag tradeoff).
+    // Every worker resolves its Postgres connection string at cold start by reading
+    // this secret's ARN directly (DbConnectionStringResolver). A rotated secret takes
+    // effect on each function's next cold start.
     const workerFunction = (
       name: string,
       projectDirName: string,
@@ -132,17 +128,12 @@ export class EventProcessingStack extends cdk.Stack {
         ),
         memorySize: opts.memoryMb ?? 512,
         timeout: cdk.Duration.seconds(opts.timeoutSeconds ?? 30),
-        // Conservative on purpose — every worker shares the same Aurora
-        // cluster apps/api uses, so this caps how many concurrent connections
-        // a burst of messages can open.
+        // Caps concurrent connections a burst of messages can open against the shared
+        // Aurora cluster.
         reservedConcurrentExecutions: opts.reservedConcurrency ?? 5,
         logGroup,
-        // ACTIVE (not PASS_THROUGH) so each invocation is sampled and traced
-        // even when nothing upstream already put a trace header on it — SQS
-        // deliveries don't propagate one. Combined with
-        // WorkerXRayInitializer's AWSSDKHandler.RegisterXRayForAllServices()
-        // module initializer (SentinelOps.Workers.Shared), every AWS SDK call
-        // a worker makes shows up as a subsegment of its invocation.
+        // ACTIVE (not PASS_THROUGH): SQS deliveries don't propagate a trace header, so
+        // each invocation needs to be sampled and traced on its own.
         tracing: lambda.Tracing.ACTIVE,
         vpc,
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
@@ -168,8 +159,7 @@ export class EventProcessingStack extends cdk.Stack {
     const notification = workerQueue('Notification', 15);
     const analytics = workerQueue('Analytics', 15);
     const auditLog = workerQueue('AuditLog', 15);
-    // Reopening an incident restarts escalation from the top — see the
-    // IncidentUpdated/Reopened rule below.
+    // Reopening an incident restarts escalation from the top (see the rule below).
     const escalationRestart = workerQueue('EscalationRestart', 30);
 
     new events.Rule(this, 'AlertReceivedRule', {
@@ -182,11 +172,8 @@ export class EventProcessingStack extends cdk.Stack {
       eventPattern: { detailType: ['alert.validated'] },
       targets: [new targets.SqsQueue(deduplication.queue)],
     });
-    // No rule targets incidentCreation.queue: it's fed only by a direct
-    // SendMessage from the deduplication worker once an alert is confirmed
-    // unique — routing that decision through EventBridge as a second
-    // `alert.validated` listener would race with the deduplication worker's
-    // own decision.
+    // No rule targets incidentCreation.queue: it's fed only by a direct SendMessage
+    // from the deduplication worker once an alert is confirmed unique.
     new events.Rule(this, 'IncidentCreatedRule', {
       eventBus: this.eventBus,
       eventPattern: { detailType: ['incident.created'] },
@@ -197,10 +184,8 @@ export class EventProcessingStack extends cdk.Stack {
       eventPattern: { detailType: ['notification.requested'] },
       targets: [new targets.SqsQueue(notification.queue)],
     });
-    // Content-filtered on the specific field/value IncidentsController and
-    // the deduplication worker both use for a reopen — not every
-    // `incident.updated` event, just the one that means "escalation needs to
-    // restart."
+    // Content-filtered to just the field/value that means "escalation needs to
+    // restart," not every incident.updated event.
     new events.Rule(this, 'IncidentReopenedRule', {
       eventBus: this.eventBus,
       eventPattern: {
@@ -209,11 +194,9 @@ export class EventProcessingStack extends cdk.Stack {
       },
       targets: [new targets.SqsQueue(escalationRestart.queue)],
     });
-    // Fan-out to the two pure-observer workers: every one of the 11 event
-    // types this system defines. CDK's typed EventPattern.detailType only
-    // accepts literal strings, not a true wildcard/prefix matcher, so this is
-    // spelled out explicitly — a 12th event type added later must be added
-    // here too, deliberately.
+    // Fan-out to the two pure-observer workers: every event type this system defines.
+    // CDK's typed EventPattern.detailType has no wildcard/prefix matcher, so a new
+    // event type added later must be added here too.
     const allEventsPattern: events.EventPattern = {
       detailType: [
         'alert.received',
@@ -293,9 +276,8 @@ export class EventProcessingStack extends cdk.Stack {
     });
 
     // --- Attachment malware-scan result handling ------------------------------
-    // GuardDuty findings land on the account's default bus, not the
-    // sentinelops-events bus every other rule in this stack matches against —
-    // constructed without `eventBus` so it targets the default one.
+    // GuardDuty findings land on the account's default bus, not sentinelops-events, so
+    // this rule is constructed without `eventBus`.
     const attachmentScan = workerQueue('AttachmentScan', 15);
     new events.Rule(this, 'AttachmentScanResultRule', {
       eventPattern: {
@@ -311,12 +293,10 @@ export class EventProcessingStack extends cdk.Stack {
     });
 
     // --- Escalation state machine -------------------------------------------
-    // SentinelOps.Workers.Escalation publishes as one package but deploys as
-    // two Lambda functions with different handlers: EscalationFunction (a
-    // direct Step Functions task target — no SQS queue, request/response) and
-    // RestartFunction (SQS-triggered, on a reopened incident). Neither fits
-    // the `workerFunction` factory's "one queue, one Function class per
-    // project" assumption, so both are built by hand here.
+    // SentinelOps.Workers.Escalation deploys as two Lambda functions: EscalationFunction
+    // (Step Functions task target, request/response) and RestartFunction (SQS-triggered).
+    // Neither fits the workerFunction factory's one-queue-per-project assumption, so
+    // both are built by hand here.
     const escalationCodeAsset = lambda.Code.fromAsset(
       path.join(
         WORKERS_DIR,
@@ -385,10 +365,8 @@ export class EventProcessingStack extends cdk.Stack {
     this.eventBus.grantPutEventsTo(escalationRestartFn);
     dbSecret.grantRead(escalationRestartFn);
 
-    // Every task both accepts and returns EscalationStateInput's shape —
-    // `payloadResponseOnly` makes the Lambda's JSON return value replace the
-    // whole state, so no Wait/Choice state here ever needs to reshape or
-    // merge JSON paths.
+    // payloadResponseOnly makes the Lambda's JSON return value replace the whole
+    // state, so no Wait/Choice state here needs to reshape or merge JSON paths.
     const escalationTaskPayload = (action: string) =>
       sfn.TaskInput.fromObject({
         action,
@@ -443,9 +421,7 @@ export class EventProcessingStack extends cdk.Stack {
     );
     waitForAck.next(checkStatusTask);
 
-    // Safety net: no single execution should run longer than this even if
-    // every level + the fallback administrator uses the maximum 1440-minute
-    // (24h) ack timeout the API allows per level.
+    // Safety net: caps total runtime even if every level uses the max 24h ack timeout.
     this.escalationStateMachine = new sfn.StateMachine(this, 'EscalationStateMachine', {
       stateMachineName: 'sentinelops-incident-escalation',
       definitionBody: sfn.DefinitionBody.fromChainable(waitForAck),

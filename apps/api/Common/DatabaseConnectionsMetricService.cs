@@ -2,15 +2,10 @@ using Npgsql;
 
 namespace SentinelOps.Api.Common;
 
-// Reports the Aurora cluster's total open-connection count once a minute —
-// server-side (pg_stat_activity), not this task's own Npgsql pool, since
-// that's the number capacity planning actually cares about: how close the
-// whole fleet of ECS tasks is to Aurora's max_connections, not any single
-// task's local pool. Plain ADO.NET (NpgsqlCommand), not EF Core's
-// FromSqlRaw/ExecuteSqlRaw — current_database() takes no input, so there's
-// nothing to parameterize, and this deliberately isn't run through
-// SentinelOpsDbContext at all (a fixed monitoring query has no tenant to
-// scope it to).
+// Reports the Aurora cluster's total open-connection count once a minute via
+// pg_stat_activity, not this task's own pool: capacity planning cares about the
+// whole fleet vs max_connections. Bypasses SentinelOpsDbContext since this query
+// has no tenant to scope it to.
 public class DatabaseConnectionsMetricService(NpgsqlDataSource dataSource) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(60);
@@ -30,9 +25,7 @@ public class DatabaseConnectionsMetricService(NpgsqlDataSource dataSource) : Bac
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // A transient DB hiccup here shouldn't crash the whole
-                // background service — just skip this tick and try again in
-                // Interval.
+                // Skip this tick on a transient DB hiccup rather than crashing the service.
             }
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }

@@ -30,10 +30,10 @@ working hours.
 | SES | <$1/mo at low volume |
 | **Total** | **~$140–150/mo**, less with `stop-dev-resources.sh` |
 
-Budget limit configured: **$50/mo** (`environments.ts` → `monthlyBudgetUsd`)
-— deliberately below the always-on estimate above, on the assumption dev is
-scaled down outside active development. Raise it if that assumption doesn't
-hold for how you're actually using this environment.
+Budget limit configured: **$50/mo** (`environments.ts` → `monthlyBudgetUsd`),
+set below the always-on estimate above on the assumption dev is scaled down
+outside active development. Raise it if that assumption doesn't hold for how
+you're actually using this environment.
 
 ## Staging
 

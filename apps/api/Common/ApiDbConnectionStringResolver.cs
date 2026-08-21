@@ -2,14 +2,9 @@ using System.Text.Json;
 
 namespace SentinelOps.Api.Common;
 
-// ECS injects the RDS-generated Secrets Manager secret as a single JSON blob
-// (DB_SECRET_JSON, via ecs.Secret.fromSecretsManager in the CDK stack) rather
-// than a ready-made connection string — Secrets Manager has no way to store
-// the finished Npgsql string itself without a second, redundant secret. This
-// builds it once at startup and feeds it into configuration under the same
-// key (ConnectionStrings:SentinelOpsDb) local dev already uses via
-// appsettings.json, so AddDbContext doesn't need to know which environment
-// it's running in.
+// ECS injects the RDS secret as a JSON blob (DB_SECRET_JSON) rather than a finished
+// connection string. Builds it once at startup under the same config key
+// (ConnectionStrings:SentinelOpsDb) local dev uses, so AddDbContext stays env-agnostic.
 public static class ApiDbConnectionStringResolver
 {
     public static void ApplyToConfiguration(IConfigurationBuilder configuration)

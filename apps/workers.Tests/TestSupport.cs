@@ -12,10 +12,8 @@ using Testcontainers.PostgreSql;
 
 namespace SentinelOps.Workers.Tests;
 
-// One Postgres container shared across every test in the "Workers" collection —
-// same rationale as apps/api.Tests/ApiTestFixture: worker logic leans on real
-// EF/Npgsql behavior (query filters, unique indexes), so InMemory isn't a
-// faithful enough substitute.
+// Shared Postgres container for the "Workers" collection; worker logic relies on real
+// EF/Npgsql behavior (query filters, unique indexes) that InMemory can't fake.
 public class WorkerTestFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine")
@@ -35,9 +33,6 @@ public class WorkerTestFixture : IAsyncLifetime
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
 
-    // Workers query through org-scoped query filters, so tests read back through
-    // the same kind of org-scoped context a worker would use, rather than an
-    // unscoped one that would silently see everything.
     public SentinelOpsDbContext CreateOrgScopedDb(Guid organizationId) =>
         WorkerDbContextFactory.Create(ConnectionString, organizationId);
 }
@@ -45,8 +40,6 @@ public class WorkerTestFixture : IAsyncLifetime
 [CollectionDefinition("Workers")]
 public class WorkersCollection : ICollectionFixture<WorkerTestFixture>;
 
-// Records what would have been published for assertions, same pattern as
-// apps/api.Tests/FakeEventPublisher.cs.
 public class FakeEventPublisher : IEventPublisher
 {
     public record PublishedEvent(string Source, string DetailType, IEventDetail Detail);
@@ -75,11 +68,8 @@ public class FakeQueueSender : IQueueSender
     }
 }
 
-// Throws on the first `failCount` calls to PublishAsync (simulating an
-// EventBridge PutEvents failure, a network blip, etc. — see WRK-01), then
-// behaves exactly like FakeEventPublisher on every call after that. Used to
-// exercise the "business state committed, publish failed, redelivery must
-// retry the publish without redoing business logic" path.
+// Fails the first `failCount` calls (simulated PutEvents failure), then behaves normally.
+// Used to test that redelivery retries the publish without redoing business logic.
 public class FlakyEventPublisher(int failCount = 1) : IEventPublisher
 {
     private int _calls;
@@ -99,8 +89,7 @@ public class FlakyEventPublisher(int failCount = 1) : IEventPublisher
     }
 }
 
-// Same idea as FlakyEventPublisher but for the deduplication worker's direct
-// SQS hand-off to incident-creation.
+// Same idea as FlakyEventPublisher, for the dedup worker's SQS hand-off to incident-creation.
 public class FlakyQueueSender(int failCount = 1) : IQueueSender
 {
     private int _calls;
@@ -134,11 +123,8 @@ public class FakeEscalationStarter : IEscalationStarter
     }
 }
 
-// In-memory stand-in for DynamoDbFingerprintStore. A single lock around every
-// operation deliberately mirrors DynamoDB's per-item atomicity guarantee (one
-// UpdateItem call is atomic; it doesn't need to be lock-free to be a faithful
-// test double), which is what lets DeduplicationWorkerTests exercise real
-// concurrent-invocation races without a live DynamoDB.
+// In-memory stand-in for DynamoDbFingerprintStore. Locks around every op to mirror
+// DynamoDB's per-item atomicity, so DeduplicationWorkerTests can exercise concurrent-invocation races.
 public class FakeFingerprintStore : IFingerprintStore
 {
     private class Entry
@@ -190,15 +176,13 @@ public class FakeFingerprintStore : IFingerprintStore
     }
 }
 
-// Builds the same SQS message body shape a real EventBridge-rule-targeting-SQS
-// delivery would produce, so tests exercise EventBridgeEnvelope.Parse exactly
-// like production does.
+// Builds the SQS message body shape a real EventBridge-to-SQS delivery produces,
+// so tests exercise EventBridgeEnvelope.Parse like production does.
 public static class SqsEventFactory
 {
     public static SQSEvent.SQSMessage Wrap(string source, string detailType, IEventDetail detail)
     {
-        // "detail-type" isn't a legal C# identifier, so this is built as a
-        // dictionary rather than an anonymous object with [JsonPropertyName].
+        // "detail-type" isn't a legal C# identifier, hence the dictionary instead of an anonymous object.
         var json = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["id"] = Guid.NewGuid().ToString(),

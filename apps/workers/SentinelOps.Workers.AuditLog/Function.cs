@@ -8,11 +8,9 @@ using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.AuditLog;
 
-// Wildcard consumer, same as the analytics worker — writes straight to the
-// existing AuditLog table (apps/api/Common/IAuditLogger.cs) rather than going
-// through IAuditLogger, which is HTTP-request-scoped and assumes an
-// authenticated principal; these are system-originated audit entries with no
-// HTTP context and often no actor at all.
+// Writes straight to the AuditLog table instead of going through IAuditLogger
+// (apps/api/Common), which is HTTP-request-scoped and assumes an authenticated
+// principal. These are system-originated entries with no actor.
 public class Function
 {
     public const string WorkerName = "audit-log";
@@ -47,8 +45,7 @@ public class Function
             return;
         }
 
-        // No outbound publish here — the row write below is the entire unit
-        // of work, so the claim is Completed in the same commit.
+        // No outbound publish, so the claim completes in the same commit as the row write.
         claimRecord.Completed = true;
 
         db.AuditLogs.Add(new SentinelOps.Api.Domain.AuditLog
@@ -70,6 +67,5 @@ public class Function
     }
 }
 
-// Same minimal shape as the analytics worker needs — duplicated rather than
-// shared to avoid a cross-worker-project dependency for four fields.
+// Duplicated from the analytics worker to avoid a cross-project dependency for four fields.
 public record CommonEventFields(Guid EventId, Guid OrganizationId, Guid CorrelationId, DateTimeOffset OccurredAtUtc);

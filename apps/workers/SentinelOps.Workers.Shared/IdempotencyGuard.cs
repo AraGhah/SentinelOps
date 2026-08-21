@@ -9,32 +9,26 @@ public enum ClaimState
     // No prior row for (workerName, eventId) — proceed with business logic.
     Claimed,
 
-    // A row exists and is Completed — the outbound publish(es) already
-    // succeeded on a prior attempt. Genuine duplicate delivery: no-op.
+    // Row exists and is Completed — publish already succeeded on a prior
+    // attempt. Duplicate delivery: no-op.
     AlreadyCompleted,
 
-    // A row exists but is NOT Completed — a prior attempt committed its
-    // business-state writes (and captured what still needs publishing in
-    // PendingOutboxJson) but crashed/failed before the outbound publish
-    // succeeded. Do NOT re-run business logic (it already landed, and
-    // re-running it risks creating a duplicate record); instead replay
-    // PendingOutboxJson through OutboxPublisher and call CompleteAsync.
+    // Row exists but not Completed — a prior attempt committed business
+    // writes and captured PendingOutboxJson but crashed before publishing.
+    // Don't re-run business logic; replay PendingOutboxJson through
+    // OutboxPublisher and call CompleteAsync.
     PendingCompletion,
 }
 
-// SQS is at-least-once delivery, so every worker must tolerate seeing the same
-// message more than once. Each worker checks/records against this table under
-// its own name, so the same EventId can independently be "new" to one worker
-// and "already handled" to another.
+// SQS is at-least-once, so each worker tracks its own claims by
+// (workerName, eventId) — the same EventId can be new to one worker and
+// already handled by another.
 //
-// Two-phase completion: a claim on its own only reserves the work (Claimed).
-// The business SaveChangesAsync commits business writes together with the
-// claim row and its PendingOutboxJson, but leaves Completed = false — the
-// outbound publish/send hasn't happened yet. Only after that publish succeeds
-// does CompleteAsync flip Completed to true. This closes the gap where a
-// crash between "business state committed" and "publish succeeded" used to
-// make TryClaimAsync see the marker as already-handled and silently skip the
-// publish forever.
+// Two-phase completion: TryClaimAsync reserves the work. SaveChangesAsync
+// commits business writes + PendingOutboxJson with Completed still false.
+// CompleteAsync flips it to true only after the outbound publish succeeds —
+// this closes the gap where a crash between commit and publish would
+// otherwise leave the publish permanently skipped.
 public static class IdempotencyGuard
 {
     public static async Task<(ClaimState State, ProcessedWorkerEvent Record)> TryClaimAsync(
@@ -61,10 +55,8 @@ public static class IdempotencyGuard
         return (ClaimState.Claimed, created);
     }
 
-    // Marks the claim Completed (and clears PendingOutboxJson) with a single
-    // atomic UPDATE, independent of the DbContext's change tracker — safe to
-    // call right after the outbound publish(es) succeed, without re-saving
-    // (and potentially re-flushing stale tracked state for) anything else.
+    // Atomic UPDATE, independent of the change tracker — safe to call right
+    // after publish succeeds without re-saving other tracked state.
     public static Task CompleteAsync(SentinelOpsDbContext db, string workerName, Guid eventId, CancellationToken ct) =>
         db.ProcessedWorkerEvents
             .Where(e => e.WorkerName == workerName && e.EventId == eventId)

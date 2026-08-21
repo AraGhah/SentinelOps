@@ -2,12 +2,10 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Api.Schedules;
 
-// Single source of truth for "who's on call right now" — used by both
-// SchedulesController's read-only /on-call endpoint and the
-// ResponderAssignment worker's incident-assignment path. Not a general RRULE
-// engine, just matches ScheduleRotation's "simple recurring weekly slot"
-// model (see Schedule.cs). An active ScheduleOverride always wins, including
-// one whose ResponderUserId is null (an intentional gap).
+// Single source of truth for "who's on call right now," used by both SchedulesController
+// and the ResponderAssignment worker. Not a general RRULE engine, just a simple recurring
+// weekly slot model. An active ScheduleOverride always wins, including a null
+// ResponderUserId (an intentional gap).
 public static class OnCallResolver
 {
     public static Guid? Resolve(
@@ -40,11 +38,8 @@ public static class OnCallResolver
                 && localTime >= rotation.StartTimeLocal && localTime < rotation.EndTimeLocal;
         }
 
-        // Overnight shift (EndTimeLocal <= StartTimeLocal): active either
-        // later on its start day, or earlier the following day before it
-        // ends — a query made after local midnight lands on the *next*
-        // calendar day, so it has to be checked against the previous day's
-        // rotation, not rotation.DayOfWeek == today.
+        // Overnight shift: a query after local midnight lands on the next calendar day,
+        // so it must also be checked against the previous day's rotation.
         var previousDay = (localDayOfWeek + 6) % 7;
         return (rotation.DayOfWeek == localDayOfWeek && localTime >= rotation.StartTimeLocal)
             || (rotation.DayOfWeek == previousDay && localTime < rotation.EndTimeLocal);

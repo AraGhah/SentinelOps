@@ -12,9 +12,8 @@ public interface IAuditLogger
         CancellationToken ct = default, Guid? organizationId = null);
 }
 
-// Writes its own SaveChangesAsync, separate from whatever business-entity
-// changes the caller is also saving, so a failure to persist the audit row
-// never gets silently folded into an unrelated business transaction.
+// Calls its own SaveChangesAsync so a failure to persist the audit row doesn't
+// get folded into the caller's business transaction.
 public class AuditLogger(
     SentinelOpsDbContext db,
     ICurrentUserService currentUserService,
@@ -22,11 +21,8 @@ public class AuditLogger(
     IHttpContextAccessor httpContextAccessor)
     : IAuditLogger
 {
-    // organizationId overrides currentOrganization.OrganizationId for actions
-    // taken outside an {orgId}-scoped route (e.g. organization creation, or
-    // invitation acceptance before membership exists) where the accessor
-    // hasn't been populated by OrganizationRoleAuthorizationHandler but the
-    // organization the action concerns is still known to the caller.
+    // organizationId overrides currentOrganization.OrganizationId for actions outside an
+    // {orgId}-scoped route (e.g. org creation, invitation acceptance before membership exists).
     public async Task LogAsync(
         string action, string? entityType = null, Guid? entityId = null, object? details = null,
         CancellationToken ct = default, Guid? organizationId = null)
@@ -40,8 +36,7 @@ public class AuditLogger(
         }
         catch (InvalidOperationException)
         {
-            // No authenticated principal available (e.g. an anonymous auth failure) —
-            // still record the event, just without an actor.
+            // No authenticated principal (e.g. anonymous auth failure); still record without an actor.
         }
 
         db.AuditLogs.Add(new AuditLog

@@ -12,7 +12,7 @@ public class OnCallResolverTests
     [Fact]
     public void Resolve_MatchingRotationWindow_ReturnsResponder()
     {
-        // 2024-01-01 is a Monday, 10:00 UTC — inside a Monday 09:00-17:00 rotation.
+        // 2024-01-01 is a Monday, 10:00 UTC, inside a Monday 09:00-17:00 rotation.
         var now = new DateTimeOffset(2024, 1, 1, 10, 0, 0, TimeSpan.Zero);
         var schedule = new Schedule { Id = Guid.NewGuid(), OrganizationId = Guid.NewGuid(), Name = "Primary", TimeZoneId = "UTC" };
         var rotations = new List<ScheduleRotation>
@@ -71,10 +71,8 @@ public class OnCallResolverTests
     [Fact]
     public void Resolve_OvernightShiftWrapsPastMidnight_NextCalendarDay()
     {
-        // A Monday 22:00 -> 06:00 rotation must still cover Tuesday 03:00 —
-        // the boundary the naive "DayOfWeek == today" check gets wrong,
-        // since the rotation is stored under Monday but "today" here is
-        // Tuesday.
+        // A Monday 22:00 -> 06:00 rotation must still cover Tuesday 03:00: the boundary
+        // a naive "DayOfWeek == today" check gets wrong.
         var now = new DateTimeOffset(2024, 1, 2, 3, 0, 0, TimeSpan.Zero);
         var schedule = new Schedule { Id = Guid.NewGuid(), OrganizationId = Guid.NewGuid(), Name = "Overnight", TimeZoneId = "UTC" };
         var rotations = new List<ScheduleRotation>
@@ -159,10 +157,8 @@ public class OnCallResolverTests
     [Fact]
     public void Resolve_OverlappingPrimaryRotations_ReturnsOneOfThemNotNull()
     {
-        // Two primary rotations covering the same window is a data-entry
-        // mistake the API doesn't reject outright, but resolution must still
-        // be deterministic — pick one of the overlapping responders rather
-        // than returning null or throwing.
+        // Overlapping primary rotations aren't rejected outright, but resolution must
+        // still be deterministic: pick one of the responders rather than null/throwing.
         var now = new DateTimeOffset(2024, 1, 1, 10, 0, 0, TimeSpan.Zero);
         var otherUserId = Guid.NewGuid();
         var schedule = new Schedule { Id = Guid.NewGuid(), OrganizationId = Guid.NewGuid(), Name = "Primary", TimeZoneId = "UTC" };
@@ -266,11 +262,8 @@ public class OnCallResolverTests
     [InlineData(2024, 7, 8)] // Daylight time (EDT, UTC-4).
     public void Resolve_NonUtcTimeZone_UsesCorrectOffsetAcrossDst(int year, int month, int day)
     {
-        // Same rotation (09:00-17:00 America/New_York, whatever weekday this
-        // date falls on), evaluated once in EST and once in EDT. If the
-        // resolver used a fixed UTC offset instead of a real time zone
-        // conversion, one of these two would resolve to the wrong side of
-        // the window.
+        // Same rotation evaluated once in EST and once in EDT; a fixed UTC offset instead
+        // of real time zone conversion would put one of these on the wrong side of the window.
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var localNoon = new DateTime(year, month, day, 12, 0, 0, DateTimeKind.Unspecified);
         var nowUtc = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localNoon, timeZone));

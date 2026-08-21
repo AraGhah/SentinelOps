@@ -3,10 +3,9 @@ using Amazon.Lambda.Core;
 
 namespace SentinelOps.Workers.Shared;
 
-// One structured JSON line per log entry (CorrelationId/EventId/OrganizationId
-// always present), matching the structured-logging convention already used by
-// apps/api/Common/RequestLoggingMiddleware. Lambda ships stdout to CloudWatch
-// Logs automatically, so this is deliberately just a JSON-formatted Console.WriteLine.
+// One structured JSON line per log entry, matching the convention in
+// apps/api/Common/RequestLoggingMiddleware. Lambda ships stdout to
+// CloudWatch Logs automatically.
 public static class WorkerLog
 {
     public static void Info(ILambdaContext context, string worker, string message,

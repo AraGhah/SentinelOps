@@ -16,12 +16,9 @@ export interface ObservabilityStackProps extends cdk.StackProps {
   dataKey: kms.IKey;
 }
 
-// SQS queue name suffixes (see EventProcessingStack's `workerQueue` calls) —
-// every one gets a "does this queue have a stuck backlog / DLQ messages"
-// alarm below. Kept as a plain string list rather than importing
-// EventProcessingStack constructs: this stack is deployed *before*
-// EventProcessingStack (see bin/infrastructure.ts), so it can only reference
-// the other stacks' resources by their fixed, predictable names.
+// Kept as a plain string list rather than importing EventProcessingStack constructs:
+// this stack deploys before EventProcessingStack, so it can only reference the other
+// stacks' resources by their fixed, predictable names.
 const WORKER_QUEUE_NAMES = [
   'alert-validation',
   'deduplication',
@@ -35,9 +32,7 @@ const WORKER_QUEUE_NAMES = [
   'dashboard-broadcast',
 ];
 
-// Every worker Lambda's fixed FunctionName (see EventProcessingStack's
-// `workerFunction`/hand-built escalation functions, and ApiStack's
-// `dashboardFunction`) — same "deploy order" reasoning as above.
+// Every worker Lambda's fixed FunctionName; same deploy-order reasoning as above.
 const WORKER_FUNCTION_NAMES = [
   'alert-validation',
   'deduplication',
@@ -69,11 +64,9 @@ export class ObservabilityStack extends cdk.Stack {
     });
 
     // --- Audit trail -----------------------------------------------------------
-    // Account-level API-call audit trail — distinct from and complementary to
-    // apps/api's Common/IAuditLogger application-level audit rows (which
-    // record business actions like "user X changed incident Y's status", not
-    // "someone called iam:CreateUser"). Multi-region + global-service-events so
-    // IAM/STS calls (which are always us-east-1) are captured too.
+    // Account-level API-call trail, distinct from apps/api's own application-level
+    // audit rows. Multi-region + global-service-events so IAM/STS calls (always
+    // us-east-1) are captured too.
     this.trailBucket = new s3.Bucket(this, 'CloudTrailBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
@@ -96,13 +89,8 @@ export class ObservabilityStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CloudTrailBucketName', { value: this.trailBucket.bucketName });
 
     // --- Alarm notifications -----------------------------------------------------
-    // No subscription added here — who gets paged is an operational decision
-    // for whoever owns this account, not something to hardcode into the
-    // stack. Subscribe an email/Slack-webhook-via-Lambda/PagerDuty endpoint
-    // post-deploy: `aws sns subscribe --topic-arn <AlarmTopicArn> ...`
-    // (output below). Same pattern as CiCdStack's production-environment
-    // reviewers: a repo/account-admin action, not something CDK code can set
-    // up unattended.
+    // No subscription added here; subscribe an endpoint post-deploy:
+    // aws sns subscribe --topic-arn <AlarmTopicArn> ...
     this.alarmTopic = new sns.Topic(this, 'AlarmTopic', { topicName: 'sentinelops-alarms' });
     new cdk.CfnOutput(this, 'AlarmTopicArn', {
       value: this.alarmTopic.topicArn,
@@ -112,11 +100,8 @@ export class ObservabilityStack extends cdk.Stack {
     const alarmAction = new cwActions.SnsAction(this.alarmTopic);
 
     // --- AWS Budget ----------------------------------------------------------
-    // Reuses AlarmTopic (above) as the notification channel — one place to
-    // subscribe an email/webhook for both operational alarms and billing
-    // warnings, rather than a second topic. AWS Budgets requires an explicit
-    // resource policy on the topic before it's allowed to publish to it (the
-    // service isn't implicitly trusted the way CloudWatch alarm actions are).
+    // Reuses AlarmTopic as the notification channel. AWS Budgets needs an explicit
+    // resource policy on the topic before it's allowed to publish to it.
     this.alarmTopic.addToResourcePolicy(
       new iam.PolicyStatement({
         sid: 'AllowBudgetsToPublish',
@@ -140,11 +125,8 @@ export class ObservabilityStack extends cdk.Stack {
       subscribers: [{ subscriptionType: 'SNS', address: this.alarmTopic.topicArn }],
     });
 
-    // costFilters scopes this budget to just this environment's tagged spend
-    // (see the Environment tag every stack gets in bin/infrastructure.ts) —
-    // without it, a per-environment budget would actually track the whole
-    // account's spend, which is wrong once more than one environment exists
-    // in the same account.
+    // costFilters scopes this budget to this environment's tagged spend; without it a
+    // per-environment budget would track the whole account's spend.
     new budgets.CfnBudget(this, 'MonthlyBudget', {
       budget: {
         budgetName: `sentinelops-${props.config.envName}-monthly`,
@@ -153,8 +135,7 @@ export class ObservabilityStack extends cdk.Stack {
         budgetLimit: { amount: props.config.monthlyBudgetUsd, unit: 'USD' },
         costFilters: { TagKeyValue: [`user:Environment$${props.config.envName}`] },
       },
-      // 80% actual spend is a real warning; 100% forecasted catches a runaway
-      // cost trend early enough in the month to still do something about it.
+      // 80% actual is a real warning; 100% forecasted catches a runaway trend early.
       notificationsWithSubscribers: [
         budgetNotification(80, 'ACTUAL'),
         budgetNotification(100, 'FORECASTED'),
@@ -162,14 +143,10 @@ export class ObservabilityStack extends cdk.Stack {
     });
 
     // --- Custom metric helpers ----------------------------------------------
-    // SentinelOps/Api and SentinelOps/Workers are populated by
-    // MetricsEmitter (apps/api/Common) and WorkerMetrics
-    // (apps/workers/SentinelOps.Workers.Shared) — both emit CloudWatch
-    // Embedded Metric Format log lines, which CloudWatch turns into these
-    // metrics with no PutMetricData call and no stack-ordering dependency
-    // (unlike an ALB or API Gateway resource, a metric namespace is just a
-    // string, so this stack can reference it even though it's deployed
-    // before ApiStack/EventProcessingStack create the things that emit it).
+    // SentinelOps/Api and SentinelOps/Workers are populated by MetricsEmitter and
+    // WorkerMetrics via CloudWatch Embedded Metric Format log lines, so there's no
+    // PutMetricData call and no stack-ordering dependency: a metric namespace is just
+    // a string, so this stack can reference it before ApiStack/EventProcessingStack exist.
     const apiMetric = (
       metricName: string,
       statistic: string,
@@ -260,10 +237,8 @@ export class ObservabilityStack extends cdk.Stack {
       2000,
       cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
     );
-    // Account-wide (no FunctionName dimension) — a coarse "is something on
-    // fire" signal; the dashboard's per-function graph (below) is what you'd
-    // actually check to find which worker. Deliberately one alarm instead of
-    // WORKER_FUNCTION_NAMES.length of them, to keep alarm-count noise down.
+    // Account-wide, one alarm instead of one per function, to keep alarm noise down.
+    // The dashboard's per-function graph is what you'd check to find which worker.
     alarm(
       'worker-lambda-errors-high',
       new cloudwatch.Metric({ namespace: 'AWS/Lambda', metricName: 'Errors', statistic: 'Sum' }),
@@ -278,9 +253,7 @@ export class ObservabilityStack extends cdk.Stack {
       cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       3,
     );
-    // Npgsql's default max pool size is 100; 80 gives headroom to react
-    // before the pool (and, upstream of it, Aurora's own max_connections)
-    // is actually exhausted.
+    // Npgsql's default max pool size is 100; 80 gives headroom before it's exhausted.
     alarm(
       'database-connections-high',
       apiMetric('DatabaseConnections', 'Average'),
@@ -307,9 +280,8 @@ export class ObservabilityStack extends cdk.Stack {
         cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
         1,
       );
-      // 15 minutes — comfortably above every worker's visibility timeout
-      // (15-30s) and its 5-retry redelivery window, so this only fires once a
-      // message is genuinely stuck, not mid-retry.
+      // 15 minutes, well above every worker's visibility timeout (15-30s) and its
+      // 5-retry redelivery window, so this only fires once a message is genuinely stuck.
       alarm(
         `${queueName}-oldest-message-too-old`,
         oldestMessageMetric(queueName),
@@ -319,14 +291,9 @@ export class ObservabilityStack extends cdk.Stack {
     }
 
     // --- CloudWatch dashboard ---------------------------------------------------
-    // Built entirely from string-named metrics (namespace + dimension names
-    // known ahead of time from the other stacks' fixed resource names, or
-    // from the custom SentinelOps/Api and SentinelOps/Workers EMF
-    // namespaces), not by importing constructs from
-    // ApiStack/EventProcessingStack/FrontendStack — this deliberately avoids
-    // a reverse dependency onto stacks that are built after this one (see the
-    // dependency graph in bin/infrastructure.ts). If a resource's fixed name
-    // ever changes, this dashboard's widgets need a matching update.
+    // Built entirely from string-named metrics, not by importing constructs from
+    // stacks built after this one, to avoid a reverse dependency. If a resource's
+    // fixed name ever changes, these widgets need a matching update.
     new cloudwatch.Dashboard(this, 'SentinelOpsDashboard', {
       dashboardName: `sentinelops-${props.config.envName}`,
       widgets: [

@@ -15,9 +15,7 @@ export default async function LoginMfaPage({
 }) {
   const { email: emailParam } = await searchParams;
 
-  // The challenge session token itself lives only in the short-lived
-  // httpOnly mfa_challenge cookie (set by the login action) — never in the
-  // URL. No cookie means there's no pending MFA challenge to complete.
+  // Challenge token lives only in the httpOnly cookie, never the URL. No cookie = no pending challenge.
   const challenge = await getMfaChallenge();
   if (!challenge) {
     redirect('/login');

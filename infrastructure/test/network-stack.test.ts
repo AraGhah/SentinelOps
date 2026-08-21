@@ -16,9 +16,8 @@ describe('NetworkStack', () => {
     template.resourceCountIs('AWS::EC2::Subnet', 6);
     template.resourceCountIs('AWS::EC2::NatGateway', 1);
 
-    // Only PrivateApp's 2 AZ-subnets get a default route through the NAT
-    // gateway — PrivateDb (Aurora's tier) gets none, which is what makes it
-    // PRIVATE_ISOLATED rather than merely "private."
+    // Only PrivateApp's AZ-subnets get a default route through the NAT gateway;
+    // PrivateDb (Aurora's tier) gets none.
     const routes = Object.values(template.findResources('AWS::EC2::Route'));
     const natRoutes = routes.filter((r: any) => r.Properties?.NatGatewayId !== undefined);
     expect(natRoutes).toHaveLength(2);

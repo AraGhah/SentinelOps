@@ -16,16 +16,12 @@ public class Service : ITenantOwned
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 
-    // OwnerUserId intentionally has no FK/nav to User: like the other "some user
-    // in the org" references on later entities (AssignedResponderUserId,
-    // AuthorUserId, etc.), it isn't constrained to an existing row — there is no
-    // membership-validation layer in this CRUD scaffolding.
+    // OwnerUserId has no FK/nav to User, same as other "some user in the org" references.
     public Organization? Organization { get; set; }
 }
 
-// Explicit join entity for service-to-service dependencies rather than an EF
-// skip-navigation, since a self-referencing many-to-many needs at least one FK
-// configured with DeleteBehavior.Restrict to avoid multiple cascade paths.
+// Explicit join entity rather than an EF skip-navigation: a self-referencing many-to-many
+// needs at least one FK with DeleteBehavior.Restrict to avoid multiple cascade paths.
 public class ServiceDependency : ITenantOwned
 {
     public Guid Id { get; set; }
@@ -37,9 +33,7 @@ public class ServiceDependency : ITenantOwned
     public Service? DependsOnService { get; set; }
 }
 
-// Condition is a free-form expression (e.g. "error_rate > 5%") rather than a typed
-// metric/operator/threshold triple, since there is no metrics-evaluation engine
-// behind this yet — same scoping-down as the raw Alert.Metadata field.
+// Condition is a free-form expression (e.g. "error_rate > 5%"); no metrics-evaluation engine yet.
 public class ServiceAlertRule : ITenantOwned
 {
     public Guid Id { get; set; }

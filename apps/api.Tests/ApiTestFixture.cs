@@ -60,16 +60,12 @@ public class ApiTestFixture : IAsyncLifetime
                     options.DefaultScheme = TestAuthHandler.SchemeName;
                 });
 
-                // No real SQS queue in tests — swap in an in-memory recorder that
-                // tests can resolve and assert against.
                 services.AddSingleton<FakeAlertQueuePublisher>();
                 services.AddSingleton<IAlertQueuePublisher>(sp => sp.GetRequiredService<FakeAlertQueuePublisher>());
 
-                // No real EventBridge bus in tests either — same recorder pattern.
                 services.AddSingleton<FakeEventPublisher>();
                 services.AddSingleton<IEventPublisher>(sp => sp.GetRequiredService<FakeEventPublisher>());
 
-                // No real S3 bucket in tests — same recorder pattern.
                 services.AddSingleton<FakeAttachmentStorageService>();
                 services.AddSingleton<IAttachmentStorageService>(sp => sp.GetRequiredService<FakeAttachmentStorageService>());
             });

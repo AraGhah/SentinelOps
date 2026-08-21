@@ -10,9 +10,7 @@ public record CreateUploadUrlRequest(
 
 public record UploadUrlResponse(string StorageKey, string UploadUrl, DateTimeOffset ExpiresAtUtc);
 
-// StorageKey must be one this org/incident's presign step actually minted
-// (see AttachmentPolicy.StorageKeyPrefix) — the client doesn't get to pick
-// an arbitrary key.
+// StorageKey must match this org/incident's presign prefix (see AttachmentPolicy.StorageKeyPrefix).
 public record CreateAttachmentRequest(
     [Required, MaxLength(260)] string FileName,
     [Required, MaxLength(150)] string ContentType,

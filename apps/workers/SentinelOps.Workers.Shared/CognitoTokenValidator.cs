@@ -11,13 +11,11 @@ public interface ITokenValidator
     Task<string?> ValidateAsync(string? accessToken, CancellationToken ct);
 }
 
-// Validates a Cognito access token outside ASP.NET — the WebSocket $connect
-// route has no HTTP middleware pipeline to lean on (see
-// SentinelOps.Workers.Dashboard.ConnectFunction), so this replicates the same
-// checks Program.cs's AddJwtBearer performs: signature against the user
-// pool's published JWKS, issuer, and (since Cognito access tokens carry
-// `client_id`/`token_use` rather than a standard `aud`) those two claims
-// checked manually.
+// Validates a Cognito access token outside ASP.NET, for the WebSocket
+// $connect route which has no HTTP middleware pipeline (see
+// ConnectFunction). Mirrors Program.cs's AddJwtBearer checks: JWKS
+// signature, issuer, and client_id/token_use checked manually since Cognito
+// access tokens don't carry a standard `aud`.
 public class CognitoTokenValidator : ITokenValidator
 {
     private readonly ConfigurationManager<OpenIdConnectConfiguration> _configManager;
@@ -28,9 +26,7 @@ public class CognitoTokenValidator : ITokenValidator
     {
         _issuer = $"https://cognito-idp.{region}.amazonaws.com/{userPoolId}";
         _clientId = clientId;
-        // Caches the JWKS document (default lifetime) instead of fetching it
-        // on every $connect — a warm Lambda instance reuses this across
-        // invocations.
+        // Caches the JWKS document; a warm Lambda instance reuses this across invocations.
         _configManager = new ConfigurationManager<OpenIdConnectConfiguration>(
             $"{_issuer}/.well-known/openid-configuration", new OpenIdConnectConfigurationRetriever());
     }
@@ -47,9 +43,8 @@ public class CognitoTokenValidator : ITokenValidator
         return new CognitoTokenValidator(region, userPoolId, clientId);
     }
 
-    // Returns the token's `sub` claim (the Cognito identity, matching
-    // User.CognitoSub) on success, or null if the token is missing, expired,
-    // mis-signed, or not an access token issued to this app client.
+    // Returns the token's `sub` claim (matches User.CognitoSub), or null if
+    // missing, expired, mis-signed, or not issued to this app client.
     public async Task<string?> ValidateAsync(string? accessToken, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(accessToken)) return null;

@@ -15,10 +15,8 @@ namespace SentinelOps.Api.Dashboard;
 public class DashboardController(SentinelOpsDbContext db) : ControllerBase
 {
     private const int RecentlyResolvedLimit = 10;
-    // Bounds the mean-ack/mean-resolution window — an org running for years
-    // shouldn't have "today's average response time" dragged down by
-    // incidents from three years ago, and it keeps the in-memory average
-    // (see below) over a bounded row count.
+    // Bounds the mean-ack/mean-resolution window so old incidents don't skew today's
+    // average, and keeps the in-memory average below over a bounded row count.
     private static readonly TimeSpan MetricsWindow = TimeSpan.FromDays(30);
 
     [HttpGet("summary")]
@@ -44,9 +42,8 @@ public class DashboardController(SentinelOpsDbContext db) : ControllerBase
                 i.Id, i.Title, i.Severity, i.Status, i.ServiceId, i.CreatedAtUtc, i.AcknowledgedAtUtc, i.ResolvedAtUtc))
             .ToListAsync(ct);
 
-        // EF/Npgsql doesn't reliably translate AVG() over a timestamp
-        // subtraction, so the (bounded, windowed) rows are pulled into
-        // memory and averaged in C# rather than in SQL.
+        // EF/Npgsql doesn't reliably translate AVG() over a timestamp subtraction,
+        // so rows are pulled into memory and averaged in C#.
         var ackTimes = await db.Incidents
             .Where(i => i.OrganizationId == orgId && i.CreatedAtUtc >= windowStart && i.AcknowledgedAtUtc != null)
             .Select(i => new { i.CreatedAtUtc, i.AcknowledgedAtUtc })

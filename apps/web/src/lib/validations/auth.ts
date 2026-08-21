@@ -2,10 +2,7 @@ import { z } from 'zod';
 
 const email = z.string().min(1, 'Email is required').email('Enter a valid email address');
 
-// Mirrors the backend's actual policy: [Required, MinLength(8), MaxLength(256)]
-// on RegisterRequest/ResetPasswordRequest (apps/api/Auth/Dtos.cs) plus the
-// Cognito user pool's password policy (infrastructure/lib/stacks/authentication-stack.ts:
-// requireLowercase/requireUppercase/requireDigits/requireSymbols all true).
+// Mirrors backend policy: RegisterRequest/ResetPasswordRequest validation plus the Cognito pool's password policy.
 const password = z
   .string()
   .min(8, 'Password must be at least 8 characters')

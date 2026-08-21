@@ -4,9 +4,8 @@ using Amazon.ApiGatewayManagementApi.Model;
 namespace SentinelOps.Workers.Shared;
 
 // Narrow wrapper around the one API Gateway Management API operation
-// BroadcastFunction needs — same rationale as IQueueSender/IEscalationStarter:
-// IAmazonApiGatewayManagementApi is a large interface, this is what test
-// doubles implement instead.
+// BroadcastFunction needs, so test doubles don't need all of
+// IAmazonApiGatewayManagementApi.
 public interface IConnectionBroadcaster
 {
     // Returns true if delivered, false if the connection is gone and should

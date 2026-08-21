@@ -10,10 +10,8 @@ using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.Escalation;
 
-// Direct Step Functions task target (request/response, not SQS) — invoked
-// once per Wait-loop iteration of the escalation state machine defined in
-// infrastructure-stack.ts. See EscalationStateInput for why input and output
-// share one shape.
+// Direct Step Functions task target (request/response, not SQS) — invoked once
+// per Wait-loop iteration of the escalation state machine in infrastructure-stack.ts.
 public class EscalationFunction
 {
     public const string WorkerName = "escalation";
@@ -50,11 +48,8 @@ public class EscalationFunction
         await using var db = WorkerDbContextFactory.Create(_connectionString, input.OrganizationId);
         var incident = await db.Incidents.FirstOrDefaultAsync(i => i.Id == input.IncidentId);
 
-        // A deleted incident, or one that has moved anywhere past
-        // Triggered/Assigned (Acknowledged, Investigating, Monitoring,
-        // Resolved, or Reopened — the latter only reachable after Resolved,
-        // and handled by a fresh execution rather than this one), means
-        // there's nothing left for this execution to escalate.
+        // Deleted, or moved past Triggered/Assigned: nothing left to escalate here.
+        // (Reopened is handled by a fresh execution, not this one.)
         var acknowledgedOrResolved = incident is null || incident.Status is not (IncidentStatus.Triggered or IncidentStatus.Assigned);
         return input with { AcknowledgedOrResolved = acknowledgedOrResolved };
     }
@@ -84,11 +79,9 @@ public class EscalationFunction
         var nextLevel = policy.Levels.Where(l => l.Order > input.CurrentLevelOrder).OrderBy(l => l.Order).FirstOrDefault();
         if (nextLevel is not null)
         {
-            // Step Functions can retry this task on a transient Lambda error,
-            // which would otherwise re-notify the same level twice — guard
-            // against that the same way every SQS-driven worker guards
-            // against redelivery, keyed off (incident, level) instead of an
-            // event id since there isn't one here.
+            // Step Functions can retry this task on a transient Lambda error, which
+            // would re-notify the same level twice without this guard. Keyed off
+            // (incident, level) since there's no event id here.
             var levelEventId = DeterministicEventId(incident.Id, nextLevel.Order);
             var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, levelEventId, CancellationToken.None);
 
@@ -99,9 +92,8 @@ public class EscalationFunction
 
             if (claimState == ClaimState.PendingCompletion)
             {
-                // A prior attempt already committed the notification rows and
-                // escalation-level bump but crashed/failed before publishing
-                // — don't re-notify the same targets again, just replay.
+                // Notification rows and level bump already committed; replay
+                // the publish instead of re-notifying the same targets.
                 var pendingRetry = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
                 await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, pendingRetry, CancellationToken.None);
                 await IdempotencyGuard.CompleteAsync(db, WorkerName, levelEventId, CancellationToken.None);
@@ -142,10 +134,8 @@ public class EscalationFunction
         {
             var adminId = policy.FallbackAdministratorUserId.Value;
 
-            // Sentinel level order (one past any real level) so the fallback
-            // administrator notification is idempotency-keyed distinctly from
-            // every real level, including across policies with different
-            // level counts.
+            // Sentinel level order, past any real level, so the fallback
+            // notification's idempotency key can't collide with a real level.
             const int fallbackLevelOrder = int.MaxValue;
             var fallbackEventId = DeterministicEventId(incident.Id, fallbackLevelOrder);
             var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, fallbackEventId, CancellationToken.None);
@@ -192,9 +182,8 @@ public class EscalationFunction
             return input with { FallbackNotified = true, AckTimeoutSeconds = (int)FallbackAckTimeout.TotalSeconds, Stop = false };
         }
 
-        // Every level, and the fallback administrator (if any), has already
-        // been notified — escalation is exhausted. Stop rather than looping
-        // back to level 1, which would notify the same people again forever.
+        // Escalation exhausted. Stop rather than looping back to level 1, which
+        // would notify the same people again forever.
         WorkerLog.Warn(context, WorkerName, "Escalation exhausted with no acknowledgement.",
             Guid.NewGuid(), input.OrganizationId, input.CorrelationId, new { incidentId = incident.Id });
         return input with { Stop = true };

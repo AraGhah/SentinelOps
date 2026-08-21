@@ -41,7 +41,7 @@ connections than the cluster can handle.
   0004) for how a cold-start-induced slow invocation on one message doesn't
   take a whole batch down with it.
 - `reservedConcurrentExecutions` is a hard ceiling — a large burst queues in
-  SQS rather than opening unbounded concurrent Postgres connections. That's
-  a deliberate throughput-vs-latency tradeoff: messages wait longer in the
-  queue during a big burst so the shared database stays healthy, rather than
-  processing everything instantly and risking connection exhaustion.
+  SQS rather than opening unbounded concurrent Postgres connections. It's a
+  throughput-vs-latency tradeoff: messages wait longer in the queue during a
+  big burst so the shared database stays healthy, rather than processing
+  everything instantly and risking connection exhaustion.

@@ -38,8 +38,8 @@ a consumer at runtime.
 - The custom bus is a real isolation boundary: rules here can safely use
   wildcard-ish multi-event patterns without accidentally matching unrelated
   account traffic, because nothing else publishes to this bus.
-- One thing this event backbone deliberately does *not* handle: the
-  deduplication → incident-creation handoff bypasses EventBridge entirely
-  (a direct SQS `SendMessage`) — see the comment on `IncidentCreationRequest`
-  in `EventDetails.cs` for why (avoids a create-incident race between two
-  independent `alert.validated` listeners).
+- One thing this event backbone does *not* handle: the deduplication →
+  incident-creation handoff bypasses EventBridge entirely (a direct SQS
+  `SendMessage`). See the comment on `IncidentCreationRequest` in
+  `EventDetails.cs` for why — it avoids a create-incident race between two
+  independent `alert.validated` listeners.

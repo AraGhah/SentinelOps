@@ -2,10 +2,8 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Api.Tenancy;
 
-// Scoped per-request. Left unset (null) by default so the DbContext's global
-// query filter is default-closed: ITenantOwned rows are invisible until an
-// authorization handler resolves and validates the caller's membership for a
-// specific organization and populates this accessor.
+// Scoped per-request. Left unset (null) by default so the DbContext's global query
+// filter is default-closed: rows are invisible until an authorization handler populates this.
 public interface ICurrentOrganizationAccessor
 {
     Guid? OrganizationId { get; }
@@ -14,8 +12,7 @@ public interface ICurrentOrganizationAccessor
 
     void Set(Guid organizationId, OrganizationRole role, Guid membershipId);
 
-    // For callers with no user membership at all — e.g. an integration API key,
-    // which is scoped to the organization that owns it but has no role/membership.
+    // For callers with no membership, e.g. an integration API key scoped to its owning org.
     void Set(Guid organizationId);
 }
 

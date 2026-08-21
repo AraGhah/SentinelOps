@@ -3,9 +3,8 @@ using SentinelOps.Api.Attachments;
 
 namespace SentinelOps.Api.Tests;
 
-// Replaces S3AttachmentStorageService in the test host — no real bucket in
-// tests, just deterministic fake URLs plus a record of what was
-// created/deleted so tests can assert against it.
+// Replaces S3AttachmentStorageService in the test host with deterministic fake URLs
+// plus a record of what was created/deleted.
 public class FakeAttachmentStorageService : IAttachmentStorageService
 {
     private readonly ConcurrentBag<string> _deleted = [];
@@ -13,10 +12,8 @@ public class FakeAttachmentStorageService : IAttachmentStorageService
 
     public IReadOnlyCollection<string> Deleted => _deleted;
 
-    // Tests default every minted key to a plausible small object so the
-    // existing happy-path tests don't need to know about this. Call this to
-    // simulate a client that actually uploaded a different number of bytes
-    // than it later claims in Create.
+    // Default is a plausible small object; call this to simulate a client uploading
+    // a different byte count than it later claims in Create.
     public void SetObjectSize(string storageKey, long sizeBytes) => _objectSizes[storageKey] = sizeBytes;
 
     public PresignedUpload CreateUploadUrl(Guid organizationId, Guid incidentId, string fileName, string contentType)

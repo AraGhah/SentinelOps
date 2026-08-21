@@ -1,8 +1,7 @@
 namespace SentinelOps.Events;
 
-// EventBridge "detail-type" values. Kept as plain strings (not an enum) since
-// they're also used verbatim as CDK rule patterns and in the JSON schema files
-// under infrastructure/event-schemas/.
+// EventBridge "detail-type" values. Plain strings since these are also used
+// verbatim as CDK rule patterns and in infrastructure/event-schemas/.
 public static class EventTypes
 {
     public const string AlertReceived = "alert.received";

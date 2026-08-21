@@ -20,13 +20,13 @@ PostgreSQL via Aurora Serverless v2, accessed through EF Core, not DynamoDB,
 MySQL, or a self-managed Postgres on EC2.
 
 Tenant isolation is enforced with EF Core global query filters
-(`HasQueryFilter` scoped to the current organization id), which only a
-real relational engine with a query planner makes free to apply
-transparently on every query — a NoSQL store would need that filter
-re-implemented by every caller instead of centralized once. Aurora
-Serverless v2 (not provisioned Aurora) specifically because traffic is
-bursty and unpredictable across three environments with very different
-load (`aurora.minCapacityAcu`/`maxCapacityAcu` per environment in
+(`HasQueryFilter` scoped to the current organization id). Only a real
+relational engine with a query planner makes this free to apply
+transparently on every query; a NoSQL store would need that filter
+re-implemented by every caller instead of centralized once. We picked
+Aurora Serverless v2 over provisioned Aurora because traffic is bursty and
+unpredictable across three environments with very different load
+(`aurora.minCapacityAcu`/`maxCapacityAcu` per environment in
 `environments.ts`), and scaling ACUs is cheaper to operate than manually
 right-sizing instance classes per environment.
 

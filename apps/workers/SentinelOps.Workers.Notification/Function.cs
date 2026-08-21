@@ -11,11 +11,9 @@ using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.Notification;
 
-// Consumes `notification.requested`. Renders an email from the Notification
-// row's Kind (see EmailTemplates), honors the recipient's NotificationPreference
-// (channel disabled / quiet hours -> Suppressed, no send attempted), and
-// attempts delivery via INotificationChannel — SES in production, a logging
-// stub in tests. Updates the Notification row and publishes
+// Consumes `notification.requested`. Renders an email from the Notification's
+// Kind, honors NotificationPreference (disabled channel / quiet hours ->
+// Suppressed), sends via INotificationChannel, and publishes
 // `notification.delivered` or `notification.failed`.
 public class Function
 {
@@ -60,10 +58,9 @@ public class Function
 
         if (claimState == ClaimState.PendingCompletion)
         {
-            // A prior attempt already updated the Notification row (Delivered/
-            // Failed/Suppressed) and committed that — do NOT re-attempt
-            // delivery through _channel (that could double-send the email).
-            // Just replay the captured publish, if any, and finish.
+            // Notification row already updated (Delivered/Failed/Suppressed); don't
+            // re-attempt delivery through _channel or it could double-send the email.
+            // Just replay the captured publish.
             WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId);
             var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
@@ -157,13 +154,9 @@ public class Function
 
         if (result.IsTransient)
         {
-            // Leave the Notification row as Requested (this attempt never
-            // happened, as far as the record is concerned) and let SQS
-            // redeliver after the visibility timeout — up to the queue's
-            // maxReceiveCount, after which it lands in the DLQ automatically.
-            // Nothing was claimed/committed for this event, so no outbox/claim
-            // cleanup is needed here — the thrown exception aborts before any
-            // SaveChangesAsync for this attempt.
+            // Leave the row as Requested and throw so SQS redelivers after the
+            // visibility timeout (DLQ after maxReceiveCount). Nothing was
+            // committed for this attempt, so no outbox/claim cleanup needed.
             WorkerLog.Warn(context, WorkerName, "Transient send failure, will retry on redelivery.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId, new { notificationId = notification.Id, result.FailureReason });
             throw new TransientNotificationException(notification.Id, result.FailureReason);

@@ -5,9 +5,8 @@ using System.Text.RegularExpressions;
 
 namespace SentinelOps.Workers.Shared;
 
-// Computes the identity a duplicate-detection decision is made on: two alerts
-// with the same fingerprint are considered the same underlying problem, even
-// if they arrived from different sources or with slightly different wording.
+// Computes the identity duplicate-detection is based on: two alerts with the
+// same fingerprint are treated as the same underlying problem.
 public static partial class AlertFingerprint
 {
     // Checked in this order since different integrations spell it differently;
@@ -17,9 +16,8 @@ public static partial class AlertFingerprint
     public static string Normalize(string value) =>
         CollapseWhitespace().Replace(value.Trim().ToLowerInvariant(), " ");
 
-    // Best-effort: Alert.Metadata is arbitrary source-defined JSON (see
-    // Alert.cs), so this returns null rather than throwing when it isn't an
-    // object, isn't valid JSON, or has none of the known error-code keys.
+    // Best-effort: Alert.Metadata is arbitrary source-defined JSON, so this
+    // returns null rather than throwing on non-object/invalid/missing keys.
     public static string? ExtractErrorCode(string? metadataJson)
     {
         if (string.IsNullOrWhiteSpace(metadataJson)) return null;
@@ -39,16 +37,14 @@ public static partial class AlertFingerprint
         }
         catch (JsonException)
         {
-            // Not JSON, or malformed — treated as "no error code" rather than
-            // failing the alert.
+            // Malformed JSON treated as "no error code" rather than failing the alert.
         }
 
         return null;
     }
 
-    // Order matches the checklist: title, error code, service, environment.
-    // OrganizationId is folded in too so the hash alone is enough to isolate
-    // tenants even if a caller forgets to scope the DynamoDB key by org.
+    // OrganizationId is folded into the hash so it alone isolates tenants
+    // even if a caller forgets to scope the DynamoDB key by org.
     public static string Compute(Guid organizationId, string title, string? errorCode, Guid? serviceId, string environment)
     {
         var joined = string.Join('|',

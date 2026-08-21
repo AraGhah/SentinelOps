@@ -59,8 +59,7 @@ describe('ApiStack', () => {
       RequiresCompatibilities: ['FARGATE'],
     });
 
-    // No longer internet-facing — API Gateway + VpcLink is now the public
-    // entry point (see the HTTP API assertions below).
+    // Not internet-facing: API Gateway + VpcLink is the public entry point.
     template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
       Scheme: 'internal',
     });

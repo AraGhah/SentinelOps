@@ -2,13 +2,10 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Api.Notifications;
 
-// Shared between NotificationPreferencesController (no read use yet, but kept
-// alongside the entity it evaluates) and the notification worker, which
-// checks this before attempting delivery.
+// Used by the notification worker before attempting delivery.
 public static class NotificationPreferenceEvaluator
 {
-    // A missing preference row (never configured) means all defaults: email
-    // enabled, no quiet hours.
+    // No preference row means all defaults: email enabled, no quiet hours.
     public static bool IsChannelEnabled(NotificationPreference? preference, string channel) =>
         channel != "email" || preference?.EmailEnabled != false;
 
@@ -29,10 +26,7 @@ public static class NotificationPreferenceEvaluator
         }
         catch (InvalidTimeZoneException)
         {
-            // The id resolves to a zone whose data is corrupt/malformed on
-            // this host — same fallback as a zone that doesn't exist at all:
-            // treat quiet hours as unconfigured rather than letting an
-            // unhandled exception fail the whole notification.
+            // Corrupt zone data on this host; treat quiet hours as unconfigured.
             return false;
         }
 
@@ -41,9 +35,7 @@ public static class NotificationPreferenceEvaluator
         var start = preference.QuietHoursStartLocal.Value;
         var end = preference.QuietHoursEndLocal.Value;
 
-        // Same overnight-wraparound handling as ScheduleRotation/OnCallResolver
-        // (see apps/api/Schedules/OnCallResolver.cs) — End <= Start means the
-        // window crosses midnight.
+        // End <= Start means the window crosses midnight (same handling as OnCallResolver).
         return end > start
             ? localTime >= start && localTime < end
             : localTime >= start || localTime < end;

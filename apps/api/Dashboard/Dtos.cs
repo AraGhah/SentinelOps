@@ -3,9 +3,8 @@ using SentinelOps.Api.Services;
 
 namespace SentinelOps.Api.Dashboard;
 
-// Rehydrates a stale dashboard after a WebSocket reconnect (or the initial
-// page load, before any push events have arrived) — the REST counterpart to
-// what BroadcastFunction pushes incrementally.
+// Rehydrates a stale dashboard after a WebSocket reconnect or initial page load;
+// the REST counterpart to what BroadcastFunction pushes incrementally.
 public record DashboardSummaryResponse(
     int ActiveIncidentCount,
     IReadOnlyDictionary<string, int> ActiveIncidentsBySeverity,

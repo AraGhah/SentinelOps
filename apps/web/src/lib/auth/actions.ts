@@ -40,9 +40,7 @@ type LoginResponse = {
 };
 
 export type ActionResult = { error: string } | void;
-// Deliberately does NOT carry the Cognito challenge session token — that's
-// stored server-side in a short-lived httpOnly cookie (see FE-03 / setMfaChallenge)
-// and never sent to the client.
+// Does not carry the Cognito challenge session token; that stays server-side in the httpOnly mfa_challenge cookie (see setMfaChallenge).
 export type LoginResult = { error: string } | { mfaRequired: true; email: string } | void;
 
 function toSession(email: string, tokens: TokenSet): Session {
@@ -56,10 +54,7 @@ function toSession(email: string, tokens: TokenSet): Session {
   };
 }
 
-// Resolves which organization should be active for a freshly-issued session:
-// prefers whatever the backend already considers "current" for this user
-// (see OrganizationsController.ListMine), falling back to the first org the
-// user belongs to. Returns null if the user isn't a member of any org yet.
+// Prefers the org the backend marks as current (OrganizationsController.ListMine), else the first org; null if none.
 async function resolveActiveOrganizationId(accessToken: string): Promise<string | null> {
   try {
     const organizations = await apiClient.get<Organization[]>('/api/v1/organizations', {
@@ -152,9 +147,7 @@ export async function login(values: { email: string; password: string }): Promis
   }
 
   if (response.mfaChallenge) {
-    // Store the challenge server-side; the client only ever learns the
-    // email (needed to display/prefill the MFA form), never the session
-    // token itself. See FE-03.
+    // Client only learns the email; the challenge session token stays server-side.
     await setMfaChallenge({
       email: response.mfaChallenge.email,
       challengeSession: response.mfaChallenge.session,
@@ -190,8 +183,7 @@ export async function verifyMfa(values: { email: string; code: string }): Promis
       session: challenge.challengeSession,
     });
   } catch (error) {
-    // Cleared on failure too (not just success) — a stale/rejected challenge
-    // session shouldn't be retried silently; the user re-enters credentials.
+    // Clear on failure too, so a rejected challenge isn't silently retried.
     await clearMfaChallenge();
     return { error: errorMessage(error, 'Invalid authentication code.') };
   }
@@ -240,17 +232,14 @@ export async function resetPassword(values: {
   redirect('/login?reset=1');
 }
 
-// Called by getValidSession() when the access token is near/past expiry.
-// Returns the refreshed session, or null (and clears the cookie) if the
-// refresh token itself is no longer valid.
+// Called by getValidSession() near/past token expiry; returns null (and clears the cookie) if the refresh token is invalid.
 export async function refreshSession(session: Session): Promise<Session | null> {
   try {
     const tokens = await apiClient.post<TokenSet>('/api/v1/auth/refresh', {
       refreshToken: session.refreshToken,
       email: session.email,
     });
-    // Keep the already-resolved active org — no need to re-fetch the
-    // organization list on every silent token refresh.
+    // Keep the already-resolved active org; no need to re-fetch on every refresh.
     const next: Session = { ...toSession(session.email, tokens), organizationId: session.organizationId };
     await setSession(next);
     return next;
@@ -291,8 +280,7 @@ export async function enableMfa(code: string): Promise<ActionResult> {
   }
 }
 
-// Lists every organization the signed-in user belongs to — backs the
-// minimal org switcher in the top nav (see FE-02).
+// Backs the org switcher in the top nav.
 export async function listOrganizations(): Promise<Organization[]> {
   const { getValidSession } = await import('@/lib/auth/session');
   const session = await getValidSession();
@@ -307,9 +295,7 @@ export async function listOrganizations(): Promise<Organization[]> {
   }
 }
 
-// Switches the active organization: tells the backend (so it's remembered
-// as the user's LastActiveOrganizationId server-side too) and updates the
-// local session cookie so subsequent org-scoped calls use it immediately.
+// Updates LastActiveOrganizationId server-side and the session cookie, so subsequent org-scoped calls use it immediately.
 export async function switchOrganization(organizationId: string): Promise<ActionResult> {
   const { getValidSession, setActiveOrganization } = await import('@/lib/auth/session');
   const session = await getValidSession();

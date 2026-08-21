@@ -9,12 +9,9 @@ public enum TimestampValidity { Valid, TooFarInFuture, TooOld }
 
 public record IngestionResult(Guid AlertId, Guid CorrelationId, bool WasDuplicate);
 
-// Shared by both the public, API-key-authenticated ingestion endpoint (after it
-// has verified the request signature) and the internal "send test event" action
-// on IntegrationsController (which is already authenticated as an org
-// administrator and has no signature to check). Owns everything downstream of
-// "this request is who it claims to be": idempotency, correlation ids, raw
-// storage, and handing the alert off to the queue.
+// Shared by the API-key-authenticated ingestion endpoint and IntegrationsController's
+// "send test event" action. Owns everything downstream of "this request is who it
+// claims to be": idempotency, correlation ids, raw storage, and queue handoff.
 public interface IAlertIngestionService
 {
     TimestampValidity ValidateTimestamp(DateTimeOffset timestampUtc);

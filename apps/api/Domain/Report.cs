@@ -19,9 +19,7 @@ public class Report : ITenantOwned
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 
-    // Set together by ReportsController.Generate — HTML and PDF are always
-    // (re)generated as a pair, from whatever the report's fields hold at that
-    // moment, so a stale key never outlives the other.
+    // Set together by ReportsController.Generate; always (re)generated as a pair.
     public string? HtmlStorageKey { get; set; }
     public string? PdfStorageKey { get; set; }
     public DateTimeOffset? GeneratedAtUtc { get; set; }

@@ -9,8 +9,7 @@ public record IntegrationResponse(
     Guid Id, Guid ServiceId, string Name, string Provider, string ApiKeyLastFour, IntegrationStatus Status,
     DateTimeOffset? LastUsedAtUtc, DateTimeOffset CreatedAtUtc, DateTimeOffset? RevokedAtUtc);
 
-// Returned only once, at creation/rotation time — the plaintext key (and signing
-// secret) are never retrievable again afterwards.
+// Plaintext key and signing secret are only ever returned here, at creation/rotation time.
 public record IntegrationCreatedResponse(IntegrationResponse Integration, string ApiKey, string SigningSecret);
 
 public record IntegrationFilters(IntegrationStatus? Status);

@@ -15,8 +15,7 @@ public class SesNotificationChannel : INotificationChannel
         _senderEmail = senderEmail;
     }
 
-    // Workers run as bare Lambdas with no DI container — same pattern as
-    // EventBridgeEventPublisher.FromEnvironment().
+    // No DI container in bare Lambdas — same pattern as EventBridgeEventPublisher.FromEnvironment().
     public static SesNotificationChannel FromEnvironment()
     {
         var senderEmail = Environment.GetEnvironmentVariable("SES_SENDER_EMAIL")
@@ -76,8 +75,7 @@ public class SesNotificationChannel : INotificationChannel
         {
             return new NotificationSendResult(false, IsTransient: true, ex.Message);
         }
-        // Anything else (network blip, an AWS-side 5xx) — default to
-        // retryable rather than silently dropping a page.
+        // Default unknown errors to retryable rather than silently dropping a page.
         catch (AmazonSimpleEmailServiceV2Exception ex)
         {
             return new NotificationSendResult(false, IsTransient: true, ex.Message);

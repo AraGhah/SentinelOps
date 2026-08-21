@@ -2,10 +2,8 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Api.Reports;
 
-// Best-effort prefill, not a substitute for a human writing the actual report —
-// UpdateReviewStatus still requires an Administrator to move it past Draft, and
-// GenerateAndPublish (see ReportsController) refuses to reach Published unless
-// the report was Approved first.
+// Best-effort prefill, not a substitute for a human-written report: UpdateReviewStatus
+// still requires an Administrator to move it past Draft.
 public static class ReportDraftBuilder
 {
     public static (string Summary, string? DetectionDetails, string? ResolutionDetails) Build(

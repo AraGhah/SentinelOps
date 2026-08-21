@@ -8,7 +8,6 @@ using SentinelOps.Api.Tenancy;
 
 namespace SentinelOps.Api.Notifications;
 
-// Read-only notification history — section 18's "Add notification history".
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/notifications")]

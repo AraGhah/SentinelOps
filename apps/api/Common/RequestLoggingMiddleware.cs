@@ -2,10 +2,8 @@ using System.Diagnostics;
 
 namespace SentinelOps.Api.Common;
 
-// Structured request logging without a third-party sink: one log entry per
-// request, correlation id = the ASP.NET Core TraceIdentifier already attached
-// to every request, carried as a logger scope so any log line written further
-// down the pipeline (including by GlobalExceptionHandler) picks it up too.
+// One log entry per request; correlation id is TraceIdentifier, carried as a logger
+// scope so downstream log lines (including GlobalExceptionHandler's) pick it up too.
 public class RequestLoggingMiddleware(RequestDelegate next, ILogger<RequestLoggingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
@@ -16,14 +14,9 @@ public class RequestLoggingMiddleware(RequestDelegate next, ILogger<RequestLoggi
         });
 
         var stopwatch = Stopwatch.StartNew();
-        // UseExceptionHandler() is registered ahead of this middleware (see
-        // Program.cs), so it's the outer layer: an exception thrown further
-        // down the pipeline propagates *through* this middleware's `await
-        // next(context)` before the exception handler ever writes the real
-        // 500 response. Without catching it here, both the log line below and
-        // the HttpErrors metric would report whatever context.Response.StatusCode
-        // still defaults to at that point (200) instead of what the client
-        // actually receives — this catch is what makes them accurate.
+        // UseExceptionHandler() sits outside this middleware, so an exception propagates
+        // through before the real 500 is written. Catch here or the log/metric would
+        // report the still-default 200 instead of what the client actually gets.
         var statusCode = 200;
         try
         {

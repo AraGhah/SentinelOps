@@ -11,9 +11,8 @@ public class Integration : ITenantOwned
     public required string Provider { get; set; }
     public required string ApiKeyHash { get; set; }
     public required string ApiKeyLastFour { get; set; }
-    // Stored as plaintext (unlike ApiKeyHash) because verifying an inbound webhook
-    // signature requires recomputing the HMAC with this exact secret — a one-way
-    // hash can't be used for that, only for the bearer-token equality check above.
+    // Stored as plaintext (unlike ApiKeyHash): verifying an inbound webhook signature
+    // requires recomputing the HMAC, which a one-way hash can't support.
     public required string SigningSecret { get; set; }
     public IntegrationStatus Status { get; set; } = IntegrationStatus.Active;
     public DateTimeOffset? LastUsedAtUtc { get; set; }

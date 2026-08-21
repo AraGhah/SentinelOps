@@ -61,10 +61,8 @@ public class Function
 
         if (claimState == ClaimState.PendingCompletion)
         {
-            // A prior attempt already created the Incident row (or determined
-            // one wasn't needed) and committed that — do NOT run the creation
-            // logic again, which would create a second Incident for the same
-            // alert. Just replay the captured publish and finish.
+            // Incident already created (or determined unnecessary) and committed.
+            // Don't rerun creation logic — replay the captured publish instead.
             WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
                 request.EventId, request.OrganizationId, request.CorrelationId);
             var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
@@ -78,21 +76,16 @@ public class Function
         {
             WorkerLog.Warn(context, WorkerName, "Alert no longer exists, skipping incident creation.",
                 request.EventId, request.OrganizationId, request.CorrelationId, new { alertId = request.AlertId });
-            // No outbound publish for this outcome — the claim is fully done
-            // once this commits.
             claimRecord.Completed = true;
             await db.SaveChangesAsync(CancellationToken.None);
-            // Nobody will ever set a real IncidentId for this fingerprint now
-            // — release it so a future alert with the same fingerprint isn't
-            // stuck waiting out the TTL.
+            // Release the fingerprint so a future alert with the same fingerprint
+            // doesn't wait out the TTL for an IncidentId that will never be set.
             await _fingerprintStore.ReleaseAsync(request.Fingerprint, CancellationToken.None);
             return;
         }
 
-        // An alert can only ever cause one incident to be created for it — belt
-        // and suspenders alongside the EventId-keyed IdempotencyGuard claim above,
-        // in case this worker's queue ever redelivers under a *different* EventId
-        // (e.g. an operator manually replaying the dedup worker's send).
+        // Extra guard beyond the EventId-keyed claim above, in case this queue ever
+        // redelivers under a different EventId (e.g. a manual replay).
         if (alert.IncidentId is not null)
         {
             WorkerLog.Info(context, WorkerName, "Alert already has an incident, skipping.",
@@ -130,11 +123,8 @@ public class Function
 
         await db.SaveChangesAsync(CancellationToken.None);
 
-        // The fingerprint store isn't part of the outbox/PendingOutboxJson
-        // replay: it's DynamoDB, not an at-least-once "publish" that dropped
-        // messages when unretried, and SetIncidentIdAsync is itself
-        // idempotent (setting the same value twice is a no-op), so it's safe
-        // to just call it again here on every attempt.
+        // Not part of the outbox replay: SetIncidentIdAsync is idempotent, so it's
+        // safe to call again on every attempt rather than tracking it in the outbox.
         await _fingerprintStore.SetIncidentIdAsync(request.Fingerprint, incident.Id, FingerprintTtl, CancellationToken.None);
 
         WorkerLog.Info(context, WorkerName, "Incident created.",
@@ -146,10 +136,8 @@ public class Function
     }
 }
 
-// IncidentSeverity (apps/api/Domain/Incident.cs) and Severity (SentinelOps.Events)
-// are declared independently on purpose (see Severity.cs's comment), so a raw
-// cast between them would silently miscast if either enum's members/order ever
-// drifted. This makes the mapping explicit — a missed case fails loudly instead.
+// IncidentSeverity and Severity are separate enums with independent ordering;
+// an explicit switch avoids a raw cast silently miscasting if either drifts.
 internal static class SeverityMapping
 {
     public static Severity ToEventSeverity(IncidentSeverity severity) => severity switch

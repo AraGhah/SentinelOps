@@ -1,8 +1,7 @@
 namespace SentinelOps.Workers.AttachmentScan;
 
-// Mirrors AttachmentPolicy.StorageKeyPrefix in apps/api/Attachments — kept as
-// a standalone parser here (rather than a shared reference) since it only
-// needs to recognize the shape, not construct it.
+// Mirrors AttachmentPolicy.StorageKeyPrefix in apps/api/Attachments; only needs
+// to recognize the shape here, not construct it.
 public static class StorageKey
 {
     public static bool TryGetOrganizationId(string storageKey, out Guid organizationId)

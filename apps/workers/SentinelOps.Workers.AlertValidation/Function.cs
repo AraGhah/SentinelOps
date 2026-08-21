@@ -7,11 +7,9 @@ using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.AlertValidation;
 
-// Consumes `alert.received` (via its own SQS queue + EventBridge rule). Re-runs
-// the same timestamp bounds AlertIngestionService already checks at ingestion
-// time — belt-and-suspenders, since by the time this runs the alert has already
-// left the API process and any additional validation rules (schema, business
-// rules) added later belong here rather than on the synchronous ingest path.
+// Consumes `alert.received` (own SQS queue + EventBridge rule). Re-checks the
+// same timestamp bounds AlertIngestionService applies at ingestion time;
+// belongs here since it runs after the alert has left the API process.
 public class Function
 {
     public const string WorkerName = "alert-validation";
@@ -52,11 +50,8 @@ public class Function
             return;
         }
 
-        // Not part of WRK-01's scope (see IncidentCreation/Notification/Deduplication/
-        // Escalation for the two-phase-completion fix) — this worker's outbound
-        // publish is a re-derivable pure function of `detail`, so at-least-once
-        // redelivery after a crash here just re-publishes the same conclusion
-        // rather than silently losing it or duplicating a record.
+        // Outbound publish is a pure function of `detail`, so redelivery after a
+        // crash just re-publishes the same conclusion instead of losing or duplicating it.
         claimRecord.Completed = true;
         await db.SaveChangesAsync(CancellationToken.None);
 

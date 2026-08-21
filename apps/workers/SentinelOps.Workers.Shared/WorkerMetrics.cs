@@ -2,11 +2,9 @@ using System.Text.Json;
 
 namespace SentinelOps.Workers.Shared;
 
-// Same CloudWatch Embedded Metric Format (EMF) approach as apps/api's
-// MetricsEmitter, under its own namespace: writes a plain JSON line to
-// stdout, which Lambda ships to CloudWatch Logs automatically, and
-// CloudWatch parses into a real custom metric with no agent and no
-// PutMetricData call.
+// CloudWatch EMF, same approach as apps/api's MetricsEmitter: writes a JSON
+// line to stdout, which Lambda ships to CloudWatch Logs and parses into a
+// custom metric with no agent/PutMetricData call.
 public static class WorkerMetrics
 {
     public const string Namespace = "SentinelOps/Workers";

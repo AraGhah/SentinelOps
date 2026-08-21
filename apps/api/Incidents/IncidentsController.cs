@@ -149,10 +149,7 @@ public class IncidentsController(
         var incident = await Find(orgId, incidentId, ct);
         if (incident is null) return NotFound();
 
-        // Minimal legality rule: once Resolved, the only way out is Reopened —
-        // guards against silently "un-resolving" an incident by skipping the
-        // explicit reopen step. All other forward/backward transitions are allowed
-        // (e.g. Investigating -> Resolved directly is fine).
+        // Once Resolved, the only way out is Reopened; all other transitions are allowed.
         if (incident.Status == IncidentStatus.Resolved && request.Status != IncidentStatus.Resolved
             && request.Status != IncidentStatus.Reopened)
         {
@@ -182,9 +179,7 @@ public class IncidentsController(
         else if (request.Status == IncidentStatus.Reopened)
         {
             incident.ResolvedAtUtc = null;
-            // A reopened incident restarts escalation from the top (see the
-            // Escalation worker's Restart action, triggered off the
-            // IncidentUpdated/"Status"->"Reopened" event published below).
+            // Restarts escalation from the top (Escalation worker's Restart action).
             incident.CurrentEscalationLevel = null;
         }
 
@@ -211,11 +206,7 @@ public class IncidentsController(
         IncidentTimeline.Record(db, orgId, incident.Id, timelineEventType, actor.Id,
             details: new { From = fromStatus, To = request.Status, request.Note });
 
-        // Let the resolved responder know, same event chain every other
-        // notification uses (see SentinelOps.Workers.Notification). Created
-        // in the same SaveChangesAsync as the status change below rather
-        // than by a dedicated worker reacting to `incident.resolved` — there
-        // isn't enough other work here to justify one.
+        // Created inline rather than by a dedicated worker; not enough work to justify one.
         Notification? resolutionNotification = null;
         if (request.Status == IncidentStatus.Resolved && incident.AssignedResponderUserId is not null)
         {
@@ -260,10 +251,8 @@ public class IncidentsController(
         }
         else if (request.Status == IncidentStatus.Reopened)
         {
-            // Same event shape the deduplication worker publishes when a
-            // duplicate alert reopens a resolved incident (see
-            // SentinelOps.Workers.Deduplication) — one consistent signal for
-            // "an incident was reopened" regardless of which path caused it.
+            // Same event shape the deduplication worker publishes on reopen, for one
+            // consistent "incident was reopened" signal regardless of the cause.
             await eventPublisher.PublishAsync(EventSources.Api, EventTypes.IncidentUpdated,
                 new IncidentUpdatedDetail(
                     Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow,

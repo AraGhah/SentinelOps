@@ -42,12 +42,10 @@ export interface ApiStackProps extends cdk.StackProps {
   eventBus: events.IEventBus;
   dataKey: kms.IKey;
   apiLogGroup: logs.ILogGroup;
-  // Defaults to true (real Route53 domain + ACM cert + API Gateway custom
-  // domain, matching this stack's original behavior). Pass false when no
-  // real hosted zone exists yet (see bin/infrastructure.ts's guard) — the
-  // ALB's internal HTTPS listener (VPC- and security-group-restricted, not
-  // public) drops to plain HTTP since there's no cert to terminate it with,
-  // and apiUrl falls back to API Gateway's own AWS-issued HTTPS endpoint.
+  // Defaults to true (Route53 domain + ACM cert + API Gateway custom domain). Pass false
+  // when no real hosted zone exists yet: the ALB's (private) HTTPS listener drops to
+  // plain HTTP since there's no cert to terminate it with, and apiUrl falls back to
+  // API Gateway's own AWS-issued HTTPS endpoint.
   deployCustomDomain?: boolean;
 }
 
@@ -75,10 +73,8 @@ export class ApiStack extends cdk.Stack {
       containerInsightsV2: ecs.ContainerInsights.ENABLED,
     });
 
-    // Two purpose-built roles, distinct from every Lambda's own auto-generated
-    // execution role and from each other: the execution role is what ECS
-    // itself needs (image pull, logs, fetching the DB secret at container
-    // start); the task role is the app's own runtime AWS SDK identity.
+    // Execution role: what ECS itself needs (image pull, logs, DB secret at container
+    // start). Task role: the app's own runtime AWS SDK identity.
     const apiExecutionRole = new iam.Role(this, 'ApiExecutionRole', {
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
     });
@@ -99,9 +95,7 @@ export class ApiStack extends cdk.Stack {
       executionRole: apiExecutionRole,
       taskRole: apiTaskRole,
     });
-    // The CD workflow passes `-c apiImageTag=$GITHUB_SHA` so each deploy
-    // rolls out the exact image it just built and pushed; ad-hoc `cdk
-    // synth`/`deploy` without that context value falls back to `latest`.
+    // CD passes -c apiImageTag=$GITHUB_SHA; ad-hoc synth/deploy falls back to `latest`.
     const apiImageTag = this.node.tryGetContext('apiImageTag') ?? 'latest';
     apiTaskDefinition.addContainer('ApiContainer', {
       image: ecs.ContainerImage.fromEcrRepository(apiRepository, apiImageTag),
@@ -115,12 +109,8 @@ export class ApiStack extends cdk.Stack {
         Aws__EventBridge__EventBusName: eventBus.eventBusName,
         Aws__Attachments__BucketName: props.attachmentsBucket.bucketName,
         Aws__Reports__BucketName: props.reportsBucket.bucketName,
-        // ASP.NET Core config binds Cors:AllowedOrigins (an array) from
-        // Cors__AllowedOrigins__0, __1, ... — see Program.cs's CORS policy.
-        // Without this, appsettings.json's localhost-only default is all
-        // that's ever configured, and the deployed API rejects every
-        // browser request from apps/web regardless of where it's hosted
-        // (this app's own FrontendStack or an external host like Vercel).
+        // ASP.NET Core binds Cors:AllowedOrigins from Cors__AllowedOrigins__0, __1, ...
+        // (see Program.cs). Without this, the API only allows localhost.
         ...Object.fromEntries(
           props.config.corsAllowedOrigins.map((origin, i) => [`Cors__AllowedOrigins__${i}`, origin]),
         ),
@@ -129,20 +119,15 @@ export class ApiStack extends cdk.Stack {
         DB_SECRET_JSON: ecs.Secret.fromSecretsManager(dbSecret),
       },
       portMappings: [{ containerPort: 5000 }],
-      // Matches Program.cs's explicit HostOptions.ShutdownTimeout — ECS sends
-      // SIGTERM, waits this long for the process to exit on its own (Kestrel
-      // drains in-flight requests), then SIGKILLs. Kept in sync deliberately:
-      // a shorter ECS timeout than the app's own would kill requests the app
-      // thought it still had time to finish.
+      // Must match Program.cs's HostOptions.ShutdownTimeout: ECS sends SIGTERM and
+      // waits this long before SIGKILL. A shorter value here would kill requests the
+      // app still thinks it has time to finish.
       stopTimeout: cdk.Duration.seconds(30),
     });
 
     // --- X-Ray tracing ---------------------------------------------------------
-    // Fargate has no host-level X-Ray daemon (unlike EC2 launch type), so the
-    // daemon has to run as its own container in the task — Program.cs's
-    // AWSSDKHandler.RegisterXRayForAllServices() + UseXRay(...) middleware
-    // send segments to 127.0.0.1:2000 (containers in one Fargate task share a
-    // network namespace), which this container relays to the X-Ray API.
+    // Fargate has no host-level X-Ray daemon, so it runs as its own container in the
+    // task; Program.cs sends segments to 127.0.0.1:2000, which this container relays.
     apiTaskDefinition.addContainer('XRayDaemonContainer', {
       image: ecs.ContainerImage.fromRegistry('public.ecr.aws/xray/aws-xray-daemon:latest'),
       cpu: 32,
@@ -151,9 +136,7 @@ export class ApiStack extends cdk.Stack {
       portMappings: [{ containerPort: 2000, protocol: ecs.Protocol.UDP }],
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'xray', logGroup: props.apiLogGroup }),
     });
-    // Task role (not execution role): the daemon assumes the running task's
-    // own IAM identity via the container credentials endpoint to call
-    // xray:PutTraceSegments/PutTelemetryRecords.
+    // Task role, not execution role: the daemon needs xray:PutTraceSegments/PutTelemetryRecords.
     apiTaskRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AWSXRayDaemonWriteAccess'),
     );
@@ -167,14 +150,11 @@ export class ApiStack extends cdk.Stack {
       assignPublicIp: false,
       minHealthyPercent: 100,
       circuitBreaker: { rollback: true },
-      // Give a cold-started container time to pass its first ALB health
-      // check before ECS considers a slow start a failure and replaces it.
+      // Time for a cold-started container to pass its first ALB health check.
       healthCheckGracePeriod: cdk.Duration.seconds(60),
     });
 
-    // Target tracking on CPU: scales out under sustained load, back in when
-    // idle, bounded by [apiDesiredCount, apiMaxCapacity] from the environment
-    // config so autoscaling never scales below the deliberately-chosen floor.
+    // Target tracking on CPU, bounded by [apiDesiredCount, apiMaxCapacity].
     apiService
       .autoScaleTaskCount({
         minCapacity: props.config.ecs.apiDesiredCount,
@@ -187,9 +167,9 @@ export class ApiStack extends cdk.Stack {
       });
 
     // --- Private ALB ---------------------------------------------------------
-    // No longer internet-facing: API Gateway (below) is the public entry
-    // point, reaching this ALB only through a VpcLink. albSecurityGroup (from
-    // NetworkStack) accepts traffic only from vpcLinkSecurityGroup.
+    // Not internet-facing: API Gateway (below) is the public entry point, reaching
+    // this ALB only through a VpcLink. albSecurityGroup accepts traffic only from
+    // vpcLinkSecurityGroup.
     const apiAlb = new elbv2.ApplicationLoadBalancer(this, 'ApiAlb', {
       loadBalancerName: 'sentinelops-api-alb',
       vpc,
@@ -205,16 +185,14 @@ export class ApiStack extends cdk.Stack {
       targetType: elbv2.TargetType.IP,
       targets: [apiService],
       healthCheck: { path: '/healthz', healthyHttpCodes: '200' },
-      // Shorter than the container's 30s stopTimeout: the ALB stops sending
-      // new requests and finishes draining in-flight ones well before ECS
-      // gives up on the container and SIGKILLs it.
+      // Shorter than the container's 30s stopTimeout so draining finishes before ECS
+      // SIGKILLs the container.
       deregistrationDelay: cdk.Duration.seconds(20),
     });
 
     // --- DNS + ACM (regional, for the ALB/API Gateway) ------------------------
-    // fromHostedZoneAttributes (not fromLookup) so cdk synth works with zero
-    // AWS credentials — it only needs the two CfnParameter values below, no
-    // live Route53 API call at synth time.
+    // fromHostedZoneAttributes (not fromLookup) so cdk synth works with zero AWS
+    // credentials, using the CfnParameter values below instead of a live Route53 call.
     const deployCustomDomain = props.deployCustomDomain ?? true;
 
     let apiAlbListener: elbv2.ApplicationListener;
@@ -247,9 +225,6 @@ export class ApiStack extends cdk.Stack {
         validation: certificatemanager.CertificateValidation.fromDns(hostedZone),
       });
 
-      // TLS stays end-to-end on the ALB→VpcLink hop too — it's inside the VPC
-      // and security-group-restricted, but the cert already exists for the
-      // public domain, so there's no reason to drop to plain HTTP internally.
       apiAlbListener = apiAlb.addListener('HttpsListener', {
         port: 443,
         certificates: [apiCertificate],
@@ -280,11 +255,9 @@ export class ApiStack extends cdk.Stack {
         ),
       });
     } else {
-      // No real hosted zone yet (see bin/infrastructure.ts's guard), so
-      // there's no domain to issue an ACM cert for. This hop is inside the
-      // VPC and security-group-restricted regardless, so plain HTTP is the
-      // same trust boundary the HTTPS path would have had, just without a
-      // cert to terminate.
+      // No hosted zone, so no domain to issue an ACM cert for. This hop is inside the
+      // VPC and security-group-restricted regardless, so plain HTTP is the same trust
+      // boundary the HTTPS path would have had.
       apiAlbListener = apiAlb.addListener('HttpListener', {
         port: 80,
         protocol: elbv2.ApplicationProtocol.HTTP,
@@ -293,9 +266,8 @@ export class ApiStack extends cdk.Stack {
     }
 
     // --- API Gateway (HTTP API) + VpcLink ------------------------------------
-    // Public entry point for the API — replaces the ALB in that role. The
-    // VpcLink's ENIs (in vpcLinkSecurityGroup) are the only thing the private
-    // ALB accepts traffic from.
+    // Public entry point for the API. The VpcLink's ENIs (in vpcLinkSecurityGroup)
+    // are the only thing the private ALB accepts traffic from.
     const vpcLink = new apigatewayv2.VpcLink(this, 'ApiVpcLink', {
       vpc,
       subnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
@@ -318,12 +290,10 @@ export class ApiStack extends cdk.Stack {
       });
     }
 
-    // --- WAF (moved from the ALB to the API Gateway) --------------------------
-    // AWS-managed rule groups for common web exploits + SQLi, plus a
-    // rate-based rule as a coarse edge backstop to the existing app-level
-    // rate limiter in Program.cs (see docs/security/security-assumptions.md).
-    // API Gateway REST/HTTP APIs use REGIONAL scope, same as an ALB — only
-    // CloudFront needs CLOUDFRONT scope (see FrontendStack).
+    // --- WAF (on the API Gateway) --------------------------
+    // AWS-managed rule groups for common web exploits + SQLi, plus a rate-based rule as
+    // a coarse backstop to Program.cs's app-level rate limiter.
+    // API Gateway REST/HTTP APIs use REGIONAL scope; only CloudFront needs CLOUDFRONT.
     const apiWebAcl = new wafv2.CfnWebACL(this, 'ApiWebAcl', {
       name: 'sentinelops-api-waf',
       scope: 'REGIONAL',
@@ -373,10 +343,8 @@ export class ApiStack extends cdk.Stack {
         },
       ],
     });
-    // WAFv2 association for API Gateway needs the *stage* ARN, not the API's
-    // own ARN — httpApi.defaultStage has no typed `stageArn` property, so
-    // it's built from the documented ARN format:
-    // arn:{partition}:apigateway:{region}::/apis/{api-id}/stages/{stage-name}
+    // WAFv2 association needs the stage ARN, not the API's own ARN. defaultStage has no
+    // typed stageArn property, so build it manually.
     const defaultStageName = httpApi.defaultStage!.stageName;
     const httpApiStageArn = `arn:${cdk.Aws.PARTITION}:apigateway:${this.region}::/apis/${httpApi.apiId}/stages/${defaultStageName}`;
     new wafv2.CfnWebACLAssociation(this, 'ApiWebAclAssociation', {
@@ -392,9 +360,8 @@ export class ApiStack extends cdk.Stack {
     });
 
     // --- Real-time dashboard: WebSocket API + Connect/Disconnect/Broadcast ---
-    // SentinelOps.Workers.Dashboard publishes as one package but deploys as
-    // three Lambda functions with different handlers. Connect/Disconnect are
-    // API Gateway WebSocket route targets (no SQS queue); Broadcast is
+    // SentinelOps.Workers.Dashboard publishes as one package but deploys as three
+    // Lambda functions. Connect/Disconnect are WebSocket route targets; Broadcast is
     // SQS-triggered.
     const dashboardCodeAsset = lambda.Code.fromAsset(
       path.join(
@@ -427,9 +394,8 @@ export class ApiStack extends cdk.Stack {
           removalPolicy: props.config.removalPolicy.compute,
         }),
         tracing: lambda.Tracing.ACTIVE,
-        // Only ConnectFunction talks to Postgres (to resolve org membership on
-        // connect) — Disconnect/Broadcast only touch DynamoDB, so they stay
-        // outside the VPC to avoid the unnecessary ENI/cold-start cost.
+        // Only ConnectFunction talks to Postgres; Disconnect/Broadcast stay outside the
+        // VPC to avoid ENI/cold-start cost.
         ...(opts.needsDatabase
           ? {
               vpc,
@@ -438,9 +404,7 @@ export class ApiStack extends cdk.Stack {
             }
           : {}),
         environment: {
-          // AWS_REGION is a Lambda-reserved variable, populated automatically
-          // at runtime — DynamoDbConnectionStore/CognitoTokenValidator read
-          // it directly, no need to set it here.
+          // AWS_REGION is a Lambda-reserved variable populated automatically at runtime.
           CONNECTIONS_TABLE_NAME: props.connectionsTable.tableName,
           ...opts.extraEnv,
         },
@@ -515,8 +479,7 @@ export class ApiStack extends cdk.Stack {
     props.connectionsTable.grantReadWriteData(dashboardBroadcastFn);
     dashboardWebSocketApi.grantManageConnections(dashboardBroadcastFn);
 
-    // Only the event types the dashboard actually renders — not routed
-    // through EventProcessingStack's analytics/audit-log fan-out.
+    // Only the event types the dashboard actually renders.
     new events.Rule(this, 'DashboardBroadcastRule', {
       eventBus,
       eventPattern: {

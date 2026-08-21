@@ -29,9 +29,7 @@ public class IncidentCreationWorkerTests(WorkerTestFixture fixture)
 
         var publisher = new FakeEventPublisher();
         var fingerprintStore = new FakeFingerprintStore();
-        // Mirrors what the dedup worker's Touch already did before handing off
-        // — the fingerprint item exists and is Pending until this worker
-        // resolves it to the real incident id.
+        // Seed the fingerprint as Pending, like the dedup worker would before handoff.
         await fingerprintStore.TouchAsync("fp-test", TimeSpan.FromHours(1), CancellationToken.None);
         var function = new Function(fixture.ConnectionString, publisher, fingerprintStore);
 

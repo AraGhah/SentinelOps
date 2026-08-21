@@ -22,22 +22,18 @@ export interface FrontendStackProps extends cdk.StackProps {
 }
 
 // NOTE: this stack's ACM certificate must be in us-east-1 (a hard CloudFront
-// requirement). It's created in *this* stack, in *this* stack's own region,
-// which only works because bin/infrastructure.ts pins every stack's region to
-// us-east-1 via one shared `env` object (see environments.ts). If a future
-// environment's primary region isn't us-east-1, this certificate needs to
-// move to its own us-east-1-pinned stack with `crossRegionReferences: true`.
+// requirement), which only works because every stack is pinned to us-east-1 (see
+// environments.ts). If a future environment's region isn't us-east-1, this
+// certificate needs its own us-east-1-pinned stack with crossRegionReferences: true.
 export class FrontendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
     const { vpc } = props;
 
-    // apps/web's Dockerfile currently runs `npm run dev` with no production
-    // build (next.config.ts has no `output: 'export'` either) — this stack's
-    // CDK code synthesizes fine (it never reads image contents) but isn't
-    // truly deployable until apps/web gets a production multi-stage
-    // Dockerfile, the same treatment apps/api/Dockerfile already got.
+    // apps/web's Dockerfile currently runs `npm run dev`, no production build yet.
+    // This synthesizes fine but isn't truly deployable until apps/web gets a
+    // production multi-stage Dockerfile like apps/api's.
     const frontendRepository = new ecr.Repository(this, 'FrontendRepository', {
       repositoryName: 'sentinelops-frontend',
       imageScanOnPush: true,
@@ -65,24 +61,12 @@ export class FrontendStack extends cdk.Stack {
       removalPolicy: props.config.removalPolicy.compute,
     });
 
-    // A shared-secret custom header CloudFront injects on every origin
-    // request and the ALB listener rule below requires — this is what stops
-    // the ALB (which must stay internet-reachable for CloudFront's standard
-    // origin fetch, unlike the API's ALB behind a VpcLink) from being usable
-    // by anyone who finds its DNS name directly.
-    //
-    // Previously a required CfnParameter with no default — since CD never
-    // passed `--parameters OriginVerifySecret=...`, every deploy failed at
-    // the CloudFormation level. This stack now owns the secret's lifecycle
-    // end-to-end: CDK generates and stores it in Secrets Manager itself (same
-    // `fromGeneratedSecret`-style pattern DatabaseStack uses for the RDS
-    // credentials), so no manual parameter ever needs to be supplied.
-    // `.secretValue.unsafeUnwrap()` is safe here specifically because both
-    // consumers below (CloudFront's customHeaders map and the ALB listener
-    // condition's string[]) only need a CDK token string — it resolves to a
-    // `{{resolve:secretsmanager:...}}` dynamic reference in the synthesized
-    // template, not a literal value, so the real secret never appears in the
-    // CFN template or CDK output.
+    // Shared-secret header CloudFront injects on every origin request; the ALB listener
+    // rule below requires it, since this ALB must stay internet-reachable for
+    // CloudFront's origin fetch (unlike the API's ALB behind a VpcLink).
+    // `.secretValue.unsafeUnwrap()` is safe here: both consumers (CloudFront's
+    // customHeaders and the listener condition) only need the CDK token string, which
+    // resolves to a dynamic reference in the template, never a literal value.
     const originVerifySecret = new secretsmanager.Secret(this, 'OriginVerifySecret', {
       secretName: `sentinelops/${props.config.envName}/origin-verify-secret`,
       description:
@@ -97,7 +81,7 @@ export class FrontendStack extends cdk.Stack {
       executionRole: frontendExecutionRole,
       taskRole: frontendTaskRole,
     });
-    // Same context-parameter pattern as ApiStack's apiImageTag.
+    // Same pattern as ApiStack's apiImageTag.
     const frontendImageTag = this.node.tryGetContext('frontendImageTag') ?? 'latest';
     frontendTaskDefinition.addContainer('FrontendContainer', {
       image: ecs.ContainerImage.fromEcrRepository(frontendRepository, frontendImageTag),
@@ -219,14 +203,9 @@ export class FrontendStack extends cdk.Stack {
     });
 
     // --- WAF (CloudFront scope) -------------------------------------------------
-    // Same AWS-managed rule groups + rate-based rule as ApiStack's REGIONAL
-    // WAF for API Gateway (see api-stack.ts), but with `scope: 'CLOUDFRONT'`.
-    // CLOUDFRONT-scope Web ACLs must be created in us-east-1 regardless of
-    // where the protected distribution's stack deploys — this isn't a special
-    // case here only because every environment's `env.region` is already
-    // us-east-1 (see EnvironmentConfig.env's header comment); if that ever
-    // changes, this WAF has to move to its own us-east-1-pinned stack the
-    // same way the CloudFront ACM certificate would.
+    // Same rule groups as ApiStack's REGIONAL WAF, but scope: 'CLOUDFRONT'.
+    // CLOUDFRONT-scope Web ACLs must be created in us-east-1 regardless of the
+    // distribution's stack region; only works here because env.region is us-east-1.
     const frontendWebAcl = new wafv2.CfnWebACL(this, 'FrontendWebAcl', {
       name: `sentinelops-${props.config.envName}-frontend-waf`,
       scope: 'CLOUDFRONT',

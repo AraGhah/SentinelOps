@@ -4,9 +4,8 @@ import { FrontendStack } from '../lib/stacks/frontend-stack';
 import { environments } from '../lib/config/environments';
 import { buildTestNetwork } from './helpers/minimal-network';
 
-// FrontendStack's ACM certificate must be in us-east-1 for CloudFront — this
-// test stack is pinned there too, matching bin/infrastructure.ts's real
-// shared-env pattern.
+// FrontendStack's ACM certificate must be in us-east-1 for CloudFront, so this
+// test stack is pinned there too.
 function synth(): Template {
   const app = new cdk.App();
   const supportStack = new cdk.Stack(app, 'TestSupportStack', { env: { region: 'us-east-1' } });

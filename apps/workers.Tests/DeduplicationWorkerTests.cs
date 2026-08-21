@@ -71,8 +71,7 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         var firstMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, firstAlert.Id));
         await function.FunctionHandler(new SQSEvent { Records = [firstMessage] }, SqsEventFactory.Context());
 
-        // Simulate the incident-creation worker having finished: create the
-        // incident directly and resolve the fingerprint the same way it would.
+        // Simulate incident-creation worker having finished.
         await using (var db = fixture.CreateOrgScopedDb(orgId))
         {
             var incident = TestData.NewIncident(db, orgId);
@@ -86,7 +85,7 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         var fingerprintValue = System.Text.Json.JsonDocument.Parse(fingerprint).RootElement.GetProperty("fingerprint").GetString()!;
         await fingerprintStore.SetIncidentIdAsync(fingerprintValue, incidentId, TimeSpan.FromHours(1), CancellationToken.None);
 
-        // Second alert, same fingerprint (same title/environment/service), attaches.
+        // Second alert, same fingerprint, attaches.
         var secondMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, secondAlert.Id));
         await function.FunctionHandler(new SQSEvent { Records = [secondMessage] }, SqsEventFactory.Context());
 
@@ -167,14 +166,11 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         var queueSender = new FakeQueueSender();
         var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, fingerprintStore);
 
-        // First delivery claims the fingerprint (AlertCount becomes 1) and
-        // hands off — nobody has created the incident yet.
+        // First delivery claims the fingerprint; nobody has created the incident yet.
         var firstMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alert.Id));
         await function.FunctionHandler(new SQSEvent { Records = [firstMessage] }, SqsEventFactory.Context());
 
-        // A concurrent duplicate for the exact same alert (different EventId,
-        // as a real second invocation would have) arrives before the winner's
-        // incident-creation worker has run.
+        // Concurrent duplicate arrives before the winner's incident-creation worker has run.
         var secondMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alert.Id));
         await Assert.ThrowsAsync<FingerprintPendingException>(
             () => function.FunctionHandler(new SQSEvent { Records = [secondMessage] }, SqsEventFactory.Context()));
@@ -204,11 +200,8 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         var publisher = new FakeEventPublisher();
         var queueSender = new FakeQueueSender();
 
-        // Every alert shares the same title/environment/service, so they all
-        // hash to the same fingerprint despite being distinct Alert rows —
-        // exercising the DynamoDB-atomic-increment race guard directly, one
-        // Function instance shared across concurrent invocations like Lambda
-        // would reuse a warm instance.
+        // All alerts hash to the same fingerprint despite distinct rows; one shared Function
+        // instance mimics a warm Lambda handling concurrent invocations.
         var function = new Function(fixture.ConnectionString, publisher, queueSender, IncidentCreationQueueUrl, fingerprintStore);
 
         var tasks = alertIds.Select(async alertId =>
@@ -226,9 +219,7 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         });
         var results = await Task.WhenAll(tasks);
 
-        // Exactly one alert observes AlertCount == 1 and hands off to
-        // incident-creation; every other concurrent arrival sees Pending and
-        // throws for redelivery (no incident exists yet to attach to).
+        // Exactly one alert wins and hands off; every other concurrent arrival sees Pending and throws.
         Assert.Single(queueSender.Sent);
         Assert.Equal(1, results.Count(succeeded => succeeded));
         Assert.Equal(99, results.Count(succeeded => !succeeded));
@@ -267,16 +258,14 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         var functionA = new Function(fixture.ConnectionString, publisher, queueSenderA, IncidentCreationQueueUrl, fingerprintStore);
         var functionB = new Function(fixture.ConnectionString, publisher, queueSenderB, IncidentCreationQueueUrl, fingerprintStore);
 
-        // Identical title/environment, but different organizations, so the
-        // fingerprint hash (which folds in OrganizationId) must differ.
+        // Identical title/environment but different orgs; fingerprint folds in OrganizationId.
         var messageA = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgA, alertA.Id));
         var messageB = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgB, alertB.Id));
 
         await functionA.FunctionHandler(new SQSEvent { Records = [messageA] }, SqsEventFactory.Context());
         await functionB.FunctionHandler(new SQSEvent { Records = [messageB] }, SqsEventFactory.Context());
 
-        // Both are treated as unique — neither throws, and both hand off
-        // independently rather than one attaching to the other's incident.
+        // Both treated as unique — hand off independently, neither attaches to the other's incident.
         Assert.Single(queueSenderA.Sent);
         Assert.Single(queueSenderB.Sent);
     }

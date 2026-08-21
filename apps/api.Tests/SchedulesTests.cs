@@ -22,8 +22,8 @@ public class SchedulesTests(ApiTestFixture fixture)
         var baseResponder = await InviteMemberAsync(client, org.Id);
         var overrideResponder = await InviteMemberAsync(client, org.Id);
 
-        // A rotation covering the whole current day, plus an override covering
-        // right now — the override must win.
+        // A rotation covering the whole current day, plus an override covering right now;
+        // the override must win.
         await client.PostAsJsonAsync(
             $"/api/v1/organizations/{org.Id}/schedules/{schedule.Id}/rotations",
             new CreateRotationRequest(

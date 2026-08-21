@@ -134,8 +134,7 @@ public class AuthController(CognitoAuthService authService, IAuditLogger auditLo
         }
         catch (Exception ex)
         {
-            // Logout is best-effort from the client's perspective — the cookie is
-            // cleared regardless — but log so we can spot real Cognito issues.
+            // Best-effort: log but don't fail, client already treats this as logged out.
             logger.LogWarning(ex, "GlobalSignOut failed");
         }
 

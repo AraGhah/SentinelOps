@@ -5,11 +5,9 @@ using SentinelOps.Workers.Shared;
 namespace SentinelOps.Workers.Dashboard;
 
 // Handles the WebSocket API's $disconnect route — removes the connection row
-// so BroadcastFunction stops trying to push events to it. Always returns 200:
-// per AWS's guidance, failing $disconnect doesn't stop the connection from
-// closing, it just leaves you without a clean signal, and the connection row
-// carries a TTL as a backstop for whatever cases get here anyway (e.g. a
-// client that disappears mid-network-partition without a clean close frame).
+// so BroadcastFunction stops pushing to it. Always returns 200: failing
+// $disconnect doesn't stop the connection from closing anyway, and the
+// connection row's TTL is the backstop for unclean disconnects.
 public class DisconnectFunction
 {
     private readonly IConnectionStore _connectionStore;

@@ -1,8 +1,6 @@
 namespace SentinelOps.Events;
 
-// Every event detail carries these so a consumer never has to special-case
-// "does this event have a correlation id." SchemaVersion is checked by
-// EventSchemaValidator before a worker acts on a message.
+// SchemaVersion is checked by EventSchemaValidator before a worker acts on a message.
 public interface IEventDetail
 {
     Guid EventId { get; }
@@ -69,10 +67,8 @@ public record NotificationFailedDetail(
     Guid NotificationId, string FailureReason,
     string SchemaVersion = "1.0") : IEventDetail;
 
-// Not an EventBridge event/detail-type — this is the internal handoff the
-// deduplication worker sends directly to the incident-creation worker's SQS
-// queue once it has determined an alert is unique. See the plan doc for why
-// this edge specifically bypasses EventBridge (avoids a create-incident race
-// between two independent listeners of `alert.validated`).
+// Not an EventBridge event/detail-type. Deduplication worker sends this directly to
+// the incident-creation worker's SQS queue to avoid a create-incident race between
+// two independent listeners of `alert.validated`.
 public record IncidentCreationRequest(
     Guid EventId, Guid OrganizationId, Guid CorrelationId, DateTimeOffset OccurredAtUtc, Guid AlertId, string Fingerprint);

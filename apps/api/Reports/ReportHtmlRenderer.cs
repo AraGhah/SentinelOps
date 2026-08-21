@@ -4,9 +4,8 @@ using SentinelOps.Api.Domain;
 
 namespace SentinelOps.Api.Reports;
 
-// Plain server-rendered HTML (no templating engine dependency) — the report's
-// fields are the only untrusted-ish input here (free text from responders),
-// so everything goes through HtmlEncode.
+// Plain server-rendered HTML, no templating engine. Report fields are free text
+// from responders, so everything goes through HtmlEncode.
 public static class ReportHtmlRenderer
 {
     public static string Render(Incident incident, Report report, List<IncidentEvent> timeline)

@@ -5,17 +5,13 @@ using SentinelOps.Events;
 
 namespace SentinelOps.Workers.Shared;
 
-// Shared by SentinelOps.Workers.ResponderAssignment (on incident.created) and
-// SentinelOps.Workers.Escalation's Restart handler (on a reopened incident) —
-// both need the identical "assign whoever's on call/first-level, notify them,
-// and if an escalation policy applies, kick off the escalation state machine"
-// sequence.
+// Shared by ResponderAssignment (on incident.created) and Escalation's
+// Restart handler (on a reopened incident): assign the on-call responder,
+// notify them, and kick off the escalation state machine if a policy applies.
 //
-// Callers own the IdempotencyGuard claim (see IdempotencyGuard/OutboxItem):
-// this only ever runs for a fresh ClaimState.Claimed — a caller that observes
-// ClaimState.PendingCompletion handles the "replay the captured outbox,
-// don't redo business writes" branch itself before ever calling in here, the
-// same way Deduplication/IncidentCreation/Notification do.
+// Callers own the IdempotencyGuard claim and only call in for a fresh
+// ClaimState.Claimed; PendingCompletion is handled by the caller replaying
+// the outbox instead.
 public static class EscalationOrchestrator
 {
     public static async Task<Guid?> AssignAndMaybeEscalateAsync(
@@ -26,8 +22,7 @@ public static class EscalationOrchestrator
         var responderId = await ResponderResolver.ResolveAsync(db, incident.ServiceId, DateTimeOffset.UtcNow);
         if (responderId is null)
         {
-            // No outbound publish for this outcome — the claim is fully done
-            // once the caller's subsequent SaveChangesAsync commits.
+            // No outbound publish needed — claim completes on the caller's SaveChangesAsync.
             claimRecord.Completed = true;
             return null;
         }
@@ -82,11 +77,8 @@ public static class EscalationOrchestrator
                 System.Text.Json.JsonSerializer.Serialize(input, EventJson.Options), correlationId));
         }
 
-        // Commit the business writes (assignment, notification row, escalation
-        // level, timeline entry) together with the claim and its captured
-        // outbox — Completed stays false until the publish below succeeds, so
-        // a crash in between doesn't silently drop the assignment notification
-        // or the escalation state machine kick-off.
+        // Completed stays false until the publish below succeeds, so a crash
+        // in between doesn't silently drop the notification or state machine kick-off.
         claimRecord.PendingOutboxJson = OutboxItem.SerializeList(items);
         await db.SaveChangesAsync(ct);
 

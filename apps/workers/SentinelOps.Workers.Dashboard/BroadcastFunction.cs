@@ -11,10 +11,9 @@ namespace SentinelOps.Workers.Dashboard;
 // Consumes the subset of events the dashboard cares about (incident created/
 // updated/resolved, new alerts — see the EventBridge rule in
 // infrastructure-stack.ts) and relays each one, as-is, to every connection
-// registered for that event's organization. Deliberately untyped: every event
-// detail already carries OrganizationId (see IEventDetail), so this doesn't
-// need to know each event's specific shape to route it — the frontend
-// distinguishes by `type` (the EventBridge detail-type).
+// registered for that event's organization. Untyped: routes on OrganizationId
+// (present on every IEventDetail) without needing each event's specific shape;
+// the frontend distinguishes by `type` (the EventBridge detail-type).
 public class BroadcastFunction
 {
     public const string WorkerName = "dashboard-broadcast";
@@ -62,9 +61,7 @@ public class BroadcastFunction
             var delivered = await _broadcaster.TryPostAsync(connectionId, payload, CancellationToken.None);
             if (!delivered)
             {
-                // The client disconnected without (or before) API Gateway
-                // invoking $disconnect — clean up now instead of waiting for
-                // the connection row's TTL.
+                // Client disconnected without API Gateway invoking $disconnect; clean up now instead of waiting for TTL.
                 await _connectionStore.RemoveAsync(connectionId, CancellationToken.None);
             }
         }

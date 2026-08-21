@@ -4,10 +4,9 @@ using Amazon.DynamoDBv2.Model;
 
 namespace SentinelOps.Workers.Shared;
 
-// Snapshot of a fingerprint's DynamoDB item immediately after a Touch. Callers
-// distinguish "I'm the first alert for this fingerprint" from "a duplicate"
-// purely from AlertCount, and check IncidentId against Pending to know whether
-// the winner has finished creating the real incident yet.
+// Snapshot of a fingerprint's DynamoDB item after a Touch. AlertCount == 1
+// means first alert for this fingerprint; IncidentId == Pending means the
+// winner hasn't finished creating the real incident yet.
 public record FingerprintRecord(string Fingerprint, string IncidentId, long AlertCount)
 {
     public const string Pending = "PENDING";
@@ -17,23 +16,19 @@ public record FingerprintRecord(string Fingerprint, string IncidentId, long Aler
 
 public interface IFingerprintStore
 {
-    // Atomically creates-or-updates the fingerprint item: if it doesn't exist,
-    // creates it with AlertCount = 1 and IncidentId = Pending; if it exists,
-    // increments AlertCount and slides the TTL forward without touching
-    // IncidentId. Returning the post-update state from the same atomic
-    // operation (rather than a separate read) is what makes this safe under
-    // concurrent invocations — DynamoDB's UpdateItem ADD is a per-item atomic
-    // increment, so exactly one concurrent caller ever observes AlertCount == 1.
+    // Atomic create-or-update: new item gets AlertCount = 1, IncidentId =
+    // Pending; existing item gets AlertCount incremented and TTL extended.
+    // DynamoDB's UpdateItem ADD is a per-item atomic increment, so exactly
+    // one concurrent caller ever observes AlertCount == 1.
     Task<FingerprintRecord> TouchAsync(string fingerprint, TimeSpan ttl, CancellationToken ct);
 
-    // Called by the winner (the caller that saw AlertCount == 1) once it has
-    // created the real incident, releasing anyone still seeing Pending.
+    // Called by the winner (AlertCount == 1) once the real incident exists,
+    // releasing anyone still seeing Pending.
     Task SetIncidentIdAsync(string fingerprint, Guid incidentId, TimeSpan ttl, CancellationToken ct);
 
-    // Best-effort cleanup for when the winner aborts before creating an
-    // incident (e.g. the triggering alert was deleted). Only removes the item
-    // if it's still Pending, so it never clobbers a real IncidentId a
-    // concurrent SetIncidentIdAsync already wrote.
+    // Best-effort cleanup if the winner aborts before creating an incident.
+    // Only removes the item if still Pending, so it can't clobber a real
+    // IncidentId a concurrent SetIncidentIdAsync already wrote.
     Task ReleaseAsync(string fingerprint, CancellationToken ct);
 }
 
@@ -50,8 +45,7 @@ public class DynamoDbFingerprintStore : IFingerprintStore
         _tableName = tableName;
     }
 
-    // Workers run as bare Lambdas with no DI container — same pattern as
-    // EventBridgeEventPublisher.FromEnvironment().
+    // Bare Lambda, no DI container.
     public static DynamoDbFingerprintStore FromEnvironment()
     {
         var tableName = Environment.GetEnvironmentVariable("FINGERPRINT_TABLE_NAME")
@@ -105,8 +99,7 @@ public class DynamoDbFingerprintStore : IFingerprintStore
         }
         catch (ConditionalCheckFailedException)
         {
-            // Already resolved (e.g. a redelivered SQS message re-ran this
-            // after the first attempt already succeeded) — nothing to do.
+            // Already resolved by a prior attempt (e.g. redelivery) — nothing to do.
         }
     }
 
@@ -133,9 +126,8 @@ public class DynamoDbFingerprintStore : IFingerprintStore
 }
 
 // Thrown when a duplicate alert arrives before the winning alert's incident
-// has finished being created. Left uncaught so the Lambda invocation fails and
-// SQS redelivers the message after its visibility timeout — by then the
-// winner should have called SetIncidentIdAsync, so the retry attaches
-// normally. This deliberately avoids busy-polling within a single invocation.
+// finishes being created. Left uncaught so SQS redelivers after the
+// visibility timeout, by when the winner should have called
+// SetIncidentIdAsync — avoids busy-polling within one invocation.
 public class FingerprintPendingException(string fingerprint)
     : Exception($"Fingerprint '{fingerprint}' is still pending incident creation; will retry on redelivery.");

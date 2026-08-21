@@ -5,13 +5,8 @@ export type EnvironmentName = 'dev' | 'staging' | 'production';
 
 export interface EnvironmentConfig {
   envName: EnvironmentName;
-  // Every stack in bin/infrastructure.ts shares this one `env` object
-  // deliberately — the FrontendStack's CloudFront ACM certificate must live
-  // in us-east-1, and pinning the whole app to us-east-1 lets that
-  // certificate be created in the same stack/region as everything else with
-  // no crossRegionReferences plumbing. If a future environment needs a
-  // different primary region, the CloudFront cert has to move to its own
-  // us-east-1-pinned stack instead — see FrontendStack's header comment.
+  // CloudFront's ACM cert must be in us-east-1, so the whole app is pinned to that
+  // region to avoid crossRegionReferences plumbing (see FrontendStack).
   env: { region: string };
   natGateways: number;
   aurora: { minCapacityAcu: number; maxCapacityAcu: number };
@@ -23,9 +18,8 @@ export interface EnvironmentConfig {
     apiMaxCapacity: number;
   };
   logRetention: logs.RetentionDays;
-  // Governs Aurora, S3, and DynamoDB removal policies — NOT Cognito (its
-  // UserPool is always RETAIN regardless of environment, since losing it
-  // invalidates every existing account, which is disruptive even in dev).
+  // Governs Aurora, S3, and DynamoDB only. Cognito's UserPool is always RETAIN
+  // regardless of environment — losing it invalidates every existing account.
   removalPolicy: {
     dataBearing: cdk.RemovalPolicy;
     compute: cdk.RemovalPolicy;
@@ -37,21 +31,12 @@ export interface EnvironmentConfig {
     hostedZoneNameDefault: string;
   };
   notificationDomainNameDefault: string;
-  // Monthly AWS Budget limit in USD (see ObservabilityStack) — a rough cap
-  // per environment, not a precise cost projection. See docs/costs.md for
-  // the estimate this is based on.
+  // Monthly AWS Budget limit in USD (see ObservabilityStack), a rough cap not a precise
+  // cost projection. See docs/costs.md.
   monthlyBudgetUsd: number;
-  // Exact browser origins allowed to call the API and upload attachments
-  // directly to S3 (ApiStack's CORS policy + StorageStack's attachments
-  // bucket CORS rules — see both for why this must be an exact origin list,
-  // never a wildcard). This is apps/web's *deployed* origin — if apps/web is
-  // hosted somewhere other than this app's own FrontendStack (e.g. Vercel),
-  // put that origin here instead/as well: a Vercel production domain
-  // (`https://your-app.vercel.app` or a custom domain) and, if preview
-  // deployments need to hit this environment's API too, each preview origin
-  // (Vercel preview URLs aren't a fixed pattern you can wildcard against
-  // AllowCredentials CORS, so add them individually as needed, or point
-  // previews at the dev environment's API instead).
+  // Exact browser origins allowed to call the API / upload to S3 (ApiStack CORS +
+  // StorageStack attachments bucket CORS). Must be exact origins, never a wildcard.
+  // If apps/web is hosted elsewhere (e.g. Vercel), put that deployed origin here.
   corsAllowedOrigins: string[];
 }
 
@@ -90,16 +75,14 @@ export const environments: Record<EnvironmentName, EnvironmentConfig> = {
     },
     notificationDomainNameDefault: 'alerts-staging.sentinelops.example',
     monthlyBudgetUsd: 150,
-    // apps/web's real staging origin (Vercel — see cd.yml's
-    // VERCEL_STAGING_URL). Keep this in sync if that alias ever changes.
+    // apps/web's real staging origin (Vercel, see cd.yml's VERCEL_STAGING_URL).
     corsAllowedOrigins: ['https://sentinel-ops-ashen-beta.vercel.app'],
   },
   production: {
     envName: 'production',
     env: { region: 'us-east-1' },
-    // Unlike dev/staging: one NAT gateway per AZ, so an AZ-level outage
-    // doesn't take outbound connectivity down for every ECS task/Lambda in
-    // the other AZ too.
+    // One NAT gateway per AZ so an AZ outage doesn't take down outbound connectivity
+    // for tasks in the other AZ.
     natGateways: 2,
     aurora: { minCapacityAcu: 1, maxCapacityAcu: 8 },
     ecs: { apiDesiredCount: 2, frontendDesiredCount: 2, apiMaxCapacity: 10 },
@@ -113,9 +96,7 @@ export const environments: Record<EnvironmentName, EnvironmentConfig> = {
     },
     notificationDomainNameDefault: 'alerts.sentinelops.example',
     monthlyBudgetUsd: 500,
-    // Placeholder — see the staging entry's comment. Set to apps/web's real
-    // production origin (e.g. your Vercel production domain/custom domain)
-    // before deploying.
+    // Placeholder. Set to apps/web's real production origin before deploying.
     corsAllowedOrigins: [],
   },
 };

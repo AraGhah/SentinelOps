@@ -5,13 +5,10 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace SentinelOps.Api.Tests;
 
-// Exercises the actual lifetime-validation mechanism Program.cs's AddJwtBearer
-// and SentinelOps.Workers.Shared.CognitoTokenValidator both configure
-// (ValidateLifetime = true against TokenValidationParameters), rather than
-// hitting a live Cognito user pool for JWKS — that's not available in CI/local
-// test runs. TestAuthHandler (used by every other apps/api.Tests test) bypasses
-// real token validation entirely, so this is the one place that failure mode
-// gets coverage at all.
+// Exercises the actual lifetime-validation mechanism (ValidateLifetime = true) rather
+// than hitting a live Cognito user pool for JWKS, which isn't available in CI/local runs.
+// TestAuthHandler bypasses real token validation everywhere else, so this is the one
+// place that failure mode gets coverage.
 public class TokenValidationTests
 {
     private static readonly SymmetricSecurityKey SigningKey =
@@ -33,10 +30,8 @@ public class TokenValidationTests
     public void ValidateToken_NotYetExpiredToken_Succeeds()
     {
         var token = BuildToken(expiresAtUtc: DateTime.UtcNow.AddMinutes(5));
-        // MapInboundClaims = false matches SentinelOps.Workers.Shared.CognitoTokenValidator
-        // (and is what this test exists to pin down) — without it, the default
-        // inbound claim map silently renames "sub" to ClaimTypes.NameIdentifier
-        // and FindFirst("sub") below would wrongly return null even for a valid token.
+        // Without MapInboundClaims = false, the default inbound claim map silently renames
+        // "sub" to ClaimTypes.NameIdentifier and FindFirst("sub") below would wrongly return null.
         var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
 
         var principal = handler.ValidateToken(token, ValidationParameters(), out _);

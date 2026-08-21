@@ -8,8 +8,7 @@ using SentinelOps.Api.Tenancy;
 
 namespace SentinelOps.Api.Notifications;
 
-// Self-service only — a user manages their own quiet hours/channel toggle,
-// no endpoint for an administrator to manage someone else's.
+// Self-service only: no endpoint for an admin to manage someone else's preferences.
 [ApiController]
 [Authorize]
 [Route("api/v1/organizations/{orgId:guid}/notification-preferences/me")]
@@ -23,8 +22,7 @@ public class NotificationPreferencesController(SentinelOpsDbContext db, ICurrent
         var preference = await db.NotificationPreferences
             .FirstOrDefaultAsync(p => p.OrganizationId == orgId && p.UserId == actor.Id, ct);
 
-        // No row yet means all defaults — return them rather than 404, since
-        // "not configured" is a valid, common state.
+        // No row means all defaults; not a 404, "not configured" is a valid state.
         return Ok(preference is null
             ? new NotificationPreferenceResponse(true, null, null, null, default)
             : ToResponse(preference));

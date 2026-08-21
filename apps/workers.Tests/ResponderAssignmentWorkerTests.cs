@@ -47,8 +47,6 @@ public class ResponderAssignmentWorkerTests(WorkerTestFixture fixture)
         var notifyDetail = Assert.IsType<NotificationRequestedDetail>(notificationRequested.Detail);
         Assert.Equal(responderId, notifyDetail.RecipientUserId);
 
-        // An applicable escalation policy exists, so the state machine must
-        // have been started, seeded with that policy's first level.
         var started = Assert.Single(escalationStarter.Started);
         Assert.Equal(StateMachineArn, started.StateMachineArn);
         Assert.Contains(policyId.ToString(), started.InputJson);
@@ -77,8 +75,7 @@ public class ResponderAssignmentWorkerTests(WorkerTestFixture fixture)
             incident = TestData.NewIncident(db, orgId, service.Id);
 
             var schedule = TestData.NewSchedule(db, orgId, service.Id);
-            // A rotation spanning the whole week so this test isn't sensitive
-            // to what day it actually runs on.
+            // Cover the whole week so the test doesn't depend on which day it runs.
             for (var day = 0; day < 7; day++)
             {
                 TestData.NewRotation(
@@ -97,8 +94,6 @@ public class ResponderAssignmentWorkerTests(WorkerTestFixture fixture)
         var message = SqsEventFactory.Wrap(EventSources.IncidentCreationWorker, EventTypes.IncidentCreated, detail);
         await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
 
-        // No escalation policy exists for this service, so no execution
-        // should have been started even though a responder was assigned.
         Assert.Empty(escalationStarter.Started);
 
         await using var verifyDb = fixture.CreateOrgScopedDb(orgId);

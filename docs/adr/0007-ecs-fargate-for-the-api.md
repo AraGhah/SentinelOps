@@ -18,15 +18,15 @@ and CPU.
 ECS Fargate (`api-stack.ts`), not Lambda-behind-API-Gateway, and not
 self-managed EC2.
 
-The deciding factor over Lambda specifically: a Lambda-per-request API would
-either need a connection pooler in front of Aurora (RDS Proxy or similar) to
-avoid exhausting `max_connections` under concurrent invocations, or accept
-cold-start latency on every scale-up — both solvable, but both add
-complexity this app doesn't need when the actual traffic shape (a
+The deciding factor over Lambda: a Lambda-per-request API would either need
+a connection pooler in front of Aurora (RDS Proxy or similar) to avoid
+exhausting `max_connections` under concurrent invocations, or accept
+cold-start latency on every scale-up. Both are solvable, but both add
+complexity this app doesn't need. The actual traffic shape here (a
 human-facing dashboard's request volume) suits a small number of long-lived
-containers better than a large number of short-lived functions. Fargate over
-EC2 specifically to avoid operating and patching the underlying instances —
-this is a portfolio-scale system, not one with dedicated infra headcount.
+containers better than a large number of short-lived functions. Fargate
+over EC2 avoids operating and patching the underlying instances — this is a
+portfolio-scale system, not one with dedicated infra headcount.
 
 ## Consequences
 
@@ -42,6 +42,6 @@ this is a portfolio-scale system, not one with dedicated infra headcount.
   long-lived connections is easier to reason about against Aurora's
   `max_connections` ceiling than however many concurrent Lambda invocations
   an API-Gateway-fronted API might have needed.
-- This is the inverse tradeoff from the workers (ADR 0008) — deliberately:
-  the API's traffic is synchronous and connection-pool-sensitive; the
-  workers' traffic is async, bursty, and per-message-independent.
+- This is the inverse tradeoff from the workers (ADR 0008): the API's
+  traffic is synchronous and connection-pool-sensitive, while the workers'
+  traffic is async, bursty, and per-message-independent.

@@ -20,11 +20,8 @@ export class StorageStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: StorageStackProps) {
     super(scope, id, props);
 
-    // Shared CMK for everything at rest across every stack that isn't already
-    // covered by an AWS-managed key: Aurora storage, Secrets Manager secrets,
-    // ECR images, CloudTrail logs, and both S3 buckets below. Consumers in
-    // other stacks (DatabaseStack, ObservabilityStack, ApiStack) take this as
-    // a kms.IKey constructor prop.
+    // Shared CMK for Aurora storage, Secrets Manager secrets, ECR images, CloudTrail
+    // logs, and both S3 buckets below. Other stacks take this as a kms.IKey prop.
     this.dataKey = new kms.Key(this, 'SentinelOpsDataKey', {
       alias: 'sentinelops/data',
       description:
@@ -34,10 +31,9 @@ export class StorageStack extends cdk.Stack {
     });
 
     // --- File attachments ---------------------------------------------------
-    // Private, encrypted, versioned so a bad presigned-upload overwrite (or a
-    // GuardDuty quarantine action) doesn't lose the original object. apps/api
-    // never gets bucket credentials of its own here — it presigns PUT/GET URLs
-    // using whatever IAM identity it runs under (ApiStack's ApiTaskRole).
+    // Versioned so a bad presigned-upload overwrite (or GuardDuty quarantine action)
+    // doesn't lose the original object. apps/api presigns PUT/GET URLs using its own
+    // IAM identity (ApiTaskRole), never holds bucket credentials directly.
     this.attachmentsBucket = new s3.Bucket(this, 'AttachmentsBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
@@ -50,19 +46,12 @@ export class StorageStack extends cdk.Stack {
           id: 'AbortIncompleteMultipartUploads',
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
         },
-        // Attachment deletion (AttachmentsController.Delete) removes the current
-        // version; this bounds how long a superseded/deleted version's bytes
-        // still cost anything.
+        // Bounds how long a superseded/deleted version's bytes still cost anything.
         { id: 'ExpireNoncurrentVersions', noncurrentVersionExpiration: cdk.Duration.days(90) },
       ],
-      // AttachmentsController hands the browser a presigned PUT URL and
-      // apps/web's client code PUTs the file straight to S3 (never through
-      // apps/api) — an XHR/fetch PUT, so it's subject to CORS like any other
-      // cross-origin browser request, same as ApiStack's Cors:AllowedOrigins
-      // and for the same reason (apps/web's deployed origin, wherever it's
-      // hosted). PUT needs ETag readable back for multipart/consistency
-      // checks; GET is included for symmetry in case attachments are ever
-      // fetched via XHR instead of a plain navigation/anchor download.
+      // apps/web PUTs the file directly to S3 via a presigned URL (never through
+      // apps/api), so it needs CORS like any other cross-origin browser request.
+      // ETag exposed for multipart/consistency checks.
       cors: [
         {
           allowedOrigins: props.config.corsAllowedOrigins,
@@ -78,15 +67,12 @@ export class StorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'AttachmentsBucketName', {
       value: this.attachmentsBucket.bucketName,
       description:
-        'S3 bucket for incident attachments — set as Aws__Attachments__BucketName on apps/api',
+        'S3 bucket for incident attachments, set as Aws__Attachments__BucketName on apps/api',
     });
 
-    // GuardDuty Malware Protection for S3 scans every object PUT to the
-    // bucket and emits a finding on the account's default EventBridge bus —
-    // this is the "scan uploaded files" requirement, without running any
-    // scanning code of our own. No aws-cdk-lib L2 (or typed L1) construct for
-    // this resource exists yet in the pinned CDK version, so it's declared
-    // via the CFN escape hatch.
+    // GuardDuty Malware Protection scans every object PUT and emits a finding on the
+    // account's default EventBridge bus. No L2/typed L1 construct exists yet in the
+    // pinned CDK version, so it's declared via the CFN escape hatch.
     const malwareProtectionRole = new iam.Role(this, 'AttachmentsMalwareProtectionRole', {
       assumedBy: new iam.ServicePrincipal('malware-protection-plan.guardduty.amazonaws.com'),
     });
@@ -119,9 +105,8 @@ export class StorageStack extends cdk.Stack {
     });
 
     // --- Post-incident reports -----------------------------------------------
-    // Private/encrypted/versioned like AttachmentsBucket, but no malware
-    // protection plan: unlike attachments, nothing here is a client-supplied
-    // upload — apps/api renders the HTML/PDF itself and PUTs the bytes directly.
+    // Like AttachmentsBucket but no malware protection plan: nothing here is a
+    // client-supplied upload, apps/api renders and PUTs the bytes itself.
     this.reportsBucket = new s3.Bucket(this, 'ReportsBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
@@ -137,19 +122,13 @@ export class StorageStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ReportsBucketName', {
       value: this.reportsBucket.bucketName,
       description:
-        'S3 bucket for generated post-incident reports — set as Aws__Reports__BucketName on apps/api',
+        'S3 bucket for generated post-incident reports, set as Aws__Reports__BucketName on apps/api',
     });
 
     // --- DynamoDB tables ------------------------------------------------------
-    // Active alert-fingerprint index for the deduplication engine: one item
-    // per (org, normalized title, error code, service, environment) hash,
-    // holding the incident it currently maps to. TTL-expired items just stop
-    // matching — they aren't a durable record, Postgres is (Alert/Incident
-    // rows), so PAY_PER_REQUEST plus TTL is enough here.
-    // Pure cache (Postgres Alert/Incident rows are the durable record — see
-    // the comment above), but PITR is cheap enough on a PAY_PER_REQUEST table
-    // that there's little reason not to also cover accidental
-    // deletes/overwrites here.
+    // Active alert-fingerprint index for deduplication. Pure cache (Postgres
+    // Alert/Incident rows are the durable record), so PAY_PER_REQUEST + TTL is enough;
+    // PITR is cheap enough on this table to also cover accidental deletes.
     this.fingerprintTable = new dynamodb.Table(this, 'AlertFingerprintTable', {
       tableName: 'sentinelops-alert-fingerprints',
       partitionKey: { name: 'Fingerprint', type: dynamodb.AttributeType.STRING },
@@ -164,10 +143,8 @@ export class StorageStack extends cdk.Stack {
     });
 
     // One item per live WebSocket connection, queried by org via the GSI when
-    // broadcasting — TTL is a backstop for connections that vanish without a
-    // clean $disconnect. PITR enabled: this holds live user session state,
-    // and unlike the fingerprint table above there's no other durable copy
-    // of "who's currently connected" to rebuild from.
+    // broadcasting. TTL backstops connections that vanish without a clean $disconnect.
+    // PITR enabled: unlike the fingerprint table, there's no other copy to rebuild from.
     this.connectionsTable = new dynamodb.Table(this, 'DashboardConnectionsTable', {
       tableName: 'sentinelops-dashboard-connections',
       partitionKey: { name: 'ConnectionId', type: dynamodb.AttributeType.STRING },

@@ -12,11 +12,9 @@ using SentinelOps.Api.Tenancy;
 
 namespace SentinelOps.Api.Ingestion;
 
-// Authenticates the alert-ingestion endpoint against an Integration's API key
-// instead of a Cognito-issued user token. There is no OrganizationMembership
-// behind an integration, so — unlike OrganizationRoleAuthorizationHandler —
-// this resolves and validates tenancy directly against the {integrationId}
-// route value and populates ICurrentOrganizationAccessor itself.
+// Authenticates the alert-ingestion endpoint against an Integration's API key instead
+// of a Cognito user token. No OrganizationMembership exists for an integration, so this
+// resolves tenancy directly from the {integrationId} route value.
 public class ApiKeyAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
@@ -44,11 +42,8 @@ public class ApiKeyAuthenticationHandler(
         var apiKey = apiKeyValues.ToString();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey))).ToLowerInvariant();
 
-        // No org is known yet at this point in the pipeline — resolving the
-        // integration (and therefore its OrganizationId) IS how the caller's
-        // org gets established, so the tenant filter can't apply here.
-        // ApiKeyHash is a per-integration secret (not guessable/enumerable),
-        // so this doesn't expose cross-tenant data beyond "does this key match."
+        // No org is known yet; resolving the integration is what establishes it, so the
+        // tenant filter can't apply here. ApiKeyHash is a per-integration secret, not enumerable.
         var integration = await db.Integrations
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(i => i.Id == integrationId && i.ApiKeyHash == hash, Context.RequestAborted);

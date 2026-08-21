@@ -1,19 +1,10 @@
 namespace SentinelOps.Api.Domain;
 
-// One row per (worker, event) pair a worker has claimed. SQS is at-least-once,
-// so every worker checks this before doing anything else and inserts into it
-// as part of the same transaction as its business-state side effects.
-//
-// Two-phase completion (see IdempotencyGuard): inserting this row (Completed =
-// false) reserves the work and commits atomically with the worker's business
-// writes, but does NOT by itself mean the unit of work is done — the outbound
-// publish/send (EventBridge, SQS, Step Functions) still has to succeed. Only
-// once that publish succeeds does a second, separate update set Completed =
-// true. If a worker crashes/fails between those two points, redelivery sees
-// Completed == false and knows to retry ONLY the outbound publish (using
-// PendingOutboxJson, captured before the business-write commit) rather than
-// re-running business logic that already landed — which would otherwise risk
-// duplicate incidents/records.
+// One row per (worker, event) pair a worker has claimed, inserted in the same transaction
+// as its business-state writes (SQS is at-least-once). Two-phase completion (see
+// IdempotencyGuard): Completed stays false until the outbound publish succeeds, so a
+// crash between the two can retry just the publish (via PendingOutboxJson) instead of
+// re-running business logic.
 public class ProcessedWorkerEvent
 {
     public Guid Id { get; set; }
@@ -21,20 +12,15 @@ public class ProcessedWorkerEvent
     public Guid EventId { get; set; }
     public DateTimeOffset ProcessedAtUtc { get; set; }
     public bool Completed { get; set; }
-    // Serialized SentinelOps.Workers.Shared.OutboxItem list — what still needs
-    // to be published/sent for this claim to be considered Completed. Null
-    // once Completed is true (CompleteAsync clears it), or when a claim never
-    // needed an outbound publish in the first place.
+    // Serialized SentinelOps.Workers.Shared.OutboxItem list still pending publish. Null
+    // once Completed, or when the claim never needed an outbound publish.
     public string? PendingOutboxJson { get; set; }
 }
 
-// Suppressed = deliberately not sent (quiet hours active, or the recipient
-// disabled the channel) — distinct from Failed, which means a real delivery
-// attempt was made and rejected/errored.
+// Suppressed = intentionally not sent (quiet hours/disabled channel); Failed = delivery attempted and rejected.
 public enum NotificationStatus { Requested, Delivered, Failed, Suppressed }
 
-// What triggered the notification — drives which email template the
-// notification worker renders. See SentinelOps.Workers.Notification.EmailTemplates.
+// Drives which email template the notification worker renders. See EmailTemplates.
 public enum NotificationKind { IncidentAssigned, IncidentEscalated, IncidentResolved }
 
 // Created by the responder-assignment/escalation workers (and the incidents
@@ -57,27 +43,23 @@ public class Notification : ITenantOwned
     public Incident? Incident { get; set; }
 }
 
-// Per-user, per-organization notification settings. Absence of a row means
-// "all defaults": email enabled, no quiet hours. Self-service only (a user
-// manages their own) — see NotificationPreferencesController.
+// Per-user, per-organization notification settings. No row means all defaults
+// (email enabled, no quiet hours).
 public class NotificationPreference : ITenantOwned
 {
     public Guid Id { get; set; }
     public Guid OrganizationId { get; set; }
     public Guid UserId { get; set; }
     public bool EmailEnabled { get; set; } = true;
-    // Both null (the default) means no quiet hours configured. A window that
-    // wraps midnight (End < Start) is treated the same way ScheduleRotation
-    // treats an overnight shift — see NotificationPreferenceExtensions.
+    // Both null means no quiet hours. End < Start wraps midnight (see NotificationPreferenceExtensions).
     public TimeOnly? QuietHoursStartLocal { get; set; }
     public TimeOnly? QuietHoursEndLocal { get; set; }
     public string? TimeZoneId { get; set; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
 }
 
-// Write-only sink for the analytics worker — one row per event observed on the
-// bus. Not tenant-scoped/query-filtered: nothing outside the analytics worker
-// reads this table yet, and cross-org aggregation is exactly what it's for.
+// Write-only sink for the analytics worker, one row per event observed on the bus.
+// Not tenant-scoped/query-filtered; cross-org aggregation is the point.
 public class AnalyticsEvent
 {
     public Guid Id { get; set; }

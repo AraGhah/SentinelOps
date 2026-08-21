@@ -72,11 +72,8 @@ public class ReportsController(
         return Ok(ToResponse(report));
     }
 
-    // Prefills a new Draft report from the incident's own record and timeline,
-    // so a responder starts from something rather than a blank form. This is
-    // a starting point, not a finished report: it still goes through the same
-    // Draft -> InReview -> Approved -> Published review-status pipeline as any
-    // other report before it can be published.
+    // Prefills a new Draft report from the incident's record and timeline. Still goes
+    // through the same Draft -> InReview -> Approved -> Published pipeline as any other report.
     [HttpPost("draft")]
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<ReportResponse>> CreateDraft(Guid orgId, Guid incidentId, CancellationToken ct)
@@ -144,10 +141,7 @@ public class ReportsController(
         var report = await Find(orgId, incidentId, reportId, ct);
         if (report is null) return NotFound();
 
-        // A report can only be Published once it has been through Approved —
-        // this is the "human approval before publication" requirement: an
-        // Administrator (enforced by the policy above) must approve first,
-        // then a (possibly different) Administrator publishes.
+        // Human approval before publication: must go through Approved first.
         if (request.ReviewStatus == ReportReviewStatus.Published && report.ReviewStatus != ReportReviewStatus.Approved)
         {
             return Problem(
@@ -164,10 +158,7 @@ public class ReportsController(
         return Ok(ToResponse(report));
     }
 
-    // Renders both the HTML and PDF forms from the report's current fields and
-    // the incident's timeline, uploads them to S3, and returns short-lived
-    // download URLs for each — mirroring the two-artifact-at-once contract
-    // GenerateReportResponse exposes.
+    // Renders HTML and PDF, uploads both to S3, and returns short-lived download URLs.
     [HttpPost("{reportId:guid}/generate")]
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<GenerateReportResponse>> Generate(Guid orgId, Guid incidentId, Guid reportId, CancellationToken ct)

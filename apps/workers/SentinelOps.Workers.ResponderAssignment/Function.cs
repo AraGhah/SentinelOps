@@ -8,12 +8,10 @@ using SentinelOps.Workers.Shared;
 
 namespace SentinelOps.Workers.ResponderAssignment;
 
-// Consumes `incident.created`. Resolves who's on call right now for the
-// incident's service (Schedule/ScheduleRotation/ScheduleOverride), falling
-// back to the service's (or org's) EscalationPolicy level-1 targets if there's
-// no schedule. Assigns the incident, requests a notification, and — if an
-// escalation policy applies — starts the escalation state machine to own
-// ack-timeout escalation from here on (see SentinelOps.Workers.Escalation).
+// Consumes `incident.created`. Resolves the on-call responder from the
+// schedule, falling back to EscalationPolicy level-1 targets. Assigns,
+// notifies, and starts the escalation state machine when a policy applies
+// (see SentinelOps.Workers.Escalation).
 public class Function
 {
     public const string WorkerName = "responder-assignment";
@@ -63,10 +61,9 @@ public class Function
 
         if (claimState == ClaimState.PendingCompletion)
         {
-            // A prior attempt already committed the assignment/notification/
-            // escalation-start business writes but crashed/failed before the
-            // publish made it out. Don't re-run EscalationOrchestrator (that
-            // would re-assign/re-notify) — just replay the captured outbox.
+            // Business writes already committed; only the publish failed. Replay
+            // the captured outbox instead of re-running EscalationOrchestrator,
+            // which would re-assign/re-notify.
             WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId);
             var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);

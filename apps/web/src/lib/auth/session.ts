@@ -7,15 +7,12 @@ export type Session = {
   idToken: string;
   refreshToken: string;
   email: string;
-  // Active organization for org-scoped API calls (e.g.
-  // /api/v1/organizations/{organizationId}/incidents). Null if the user
-  // doesn't belong to any organization yet.
+  // Active organization for org-scoped API calls; null if the user has no org yet.
   organizationId: string | null;
   expiresAt: number; // epoch ms
 };
 
-// Pending MFA challenge, stored in its own short-lived cookie instead of a
-// URL query string (see FE-03) between login submission and MFA verify.
+// Pending MFA challenge, stored in its own short-lived cookie (not a URL query string).
 export type MfaChallengeCookie = {
   email: string;
   challengeSession: string;
@@ -35,8 +32,7 @@ export async function getSession(): Promise<Session | null> {
   }
 }
 
-// Returns a session with a non-expired access token, transparently refreshing
-// it against the API when it's within a minute of expiring (or already past).
+// Refreshes the access token against the API when it's within a minute of expiring (or already past).
 export async function getValidSession(): Promise<Session | null> {
   const session = await getSession();
   if (!session) return null;
@@ -65,8 +61,7 @@ export async function clearSession(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
-// Updates just the active organization on the existing session cookie. Used
-// by the org switcher (see switchOrganization in lib/auth/actions.ts).
+// Updates just the active organization on the existing session cookie.
 export async function setActiveOrganization(organizationId: string): Promise<void> {
   const session = await getSession();
   if (!session) return;

@@ -37,16 +37,16 @@ call.
 
 ## Consequences
 
-- `FakeFingerprintStore` (`workers.Tests/TestSupport.cs`) deliberately
-  mirrors this atomicity with a single lock around every operation — not
-  because DynamoDB needs a lock, but because the *test double* needs to be
-  just as atomic as the real thing for
+- `FakeFingerprintStore` (`workers.Tests/TestSupport.cs`) mirrors this
+  atomicity with a single lock around every operation. Not because DynamoDB
+  needs a lock, but because the *test double* needs to be just as atomic as
+  the real thing for
   `Handle_100SimultaneousIdenticalAlerts_ExactlyOneIsTreatedAsUnique` to be
   a meaningful test at all.
 - Fingerprint records need their own TTL/lifecycle independent of the
   Postgres `Alert`/`Incident` rows they reference — DynamoDB's native TTL
   attribute handles automatic expiry without a separate cleanup job.
 - This is the one piece of primary state that lives outside PostgreSQL
-  (ADR 0002) — a deliberate exception because the atomicity guarantee it
+  (ADR 0002). That's an exception made because the atomicity guarantee it
   needs is DynamoDB's whole reason for existing here, not a general
   preference for NoSQL over relational storage in this system.

@@ -1,9 +1,7 @@
 namespace SentinelOps.Events;
 
-// Cheap structural check, not full JSON Schema validation — the JSON Schema files
-// under infrastructure/event-schemas/ are the documented source of truth for the
-// wire shape; this just guards against a version this build doesn't know how to
-// handle, and the handful of "must never be empty" invariants every event shares.
+// Cheap structural check, not full JSON Schema validation (see infrastructure/event-schemas/
+// for the actual wire schema). Just guards unsupported versions and required fields.
 public static class EventSchemaValidator
 {
     public static readonly IReadOnlySet<string> SupportedVersions = new HashSet<string> { "1.0" };

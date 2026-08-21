@@ -7,11 +7,10 @@ using SentinelOps.Workers.Shared;
 namespace SentinelOps.Workers.Escalation;
 
 // Consumes `incident.updated` events where Field == "Status" and
-// NewValue == "Reopened" (filtered by the EventBridge rule that targets this
-// function's queue — see infrastructure-stack.ts). A reopened incident needs
-// the exact same "assign + maybe start escalation" sequence a brand-new
-// incident gets, since its previous escalation execution already stopped
-// itself once the incident was resolved.
+// NewValue == "Reopened" (filtered by the EventBridge rule targeting this
+// queue — see infrastructure-stack.ts). Runs the same assign + maybe-escalate
+// sequence a new incident gets, since the previous escalation execution
+// already stopped when the incident was resolved.
 public class RestartFunction
 {
     public const string WorkerName = "escalation-restart";
@@ -52,10 +51,8 @@ public class RestartFunction
 
         if (detail.Field != "Status" || detail.NewValue != "Reopened")
         {
-            // Belt and suspenders: the EventBridge rule already filters to
-            // this exact field/value, but a broader `incident.updated` rule
-            // added later shouldn't silently start re-escalating on an
-            // unrelated field change.
+            // EventBridge rule already filters to this field/value; this guards
+            // against a broader `incident.updated` rule added later.
             return;
         }
 
@@ -71,10 +68,9 @@ public class RestartFunction
 
         if (claimState == ClaimState.PendingCompletion)
         {
-            // A prior attempt already committed the assignment/notification/
-            // escalation-start business writes but crashed/failed before the
-            // publish made it out. Don't re-run EscalationOrchestrator (that
-            // would re-assign/re-notify) — just replay the captured outbox.
+            // Business writes already committed; only the publish failed. Replay
+            // the captured outbox instead of re-running EscalationOrchestrator,
+            // which would re-assign/re-notify.
             WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId);
             var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);

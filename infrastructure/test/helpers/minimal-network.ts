@@ -8,12 +8,9 @@ export interface TestNetwork {
   vpcLinkSecurityGroup: ec2.SecurityGroup;
 }
 
-// Throwaway VPC + security groups for stacks tested in isolation (standard
-// CDK unit-testing pattern) — not NetworkStack itself, which has its own
-// dedicated test file asserting the real construction. Mirrors NetworkStack's
-// actual 3 security groups; DatabaseStack owns its RDS/rotation security
-// groups itself (see database-stack.ts for why), so tests exercising it
-// build those directly rather than through this helper.
+// Throwaway VPC + security groups for stacks tested in isolation. Mirrors
+// NetworkStack's 3 security groups; DatabaseStack owns its RDS/rotation security
+// groups itself, so tests exercising it build those directly instead.
 export function buildTestNetwork(stack: cdk.Stack): TestNetwork {
   const vpc = new ec2.Vpc(stack, 'TestVpc', {
     maxAzs: 2,

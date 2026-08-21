@@ -7,12 +7,9 @@ namespace SentinelOps.Workers.Dashboard;
 
 // Handles the WebSocket API's $connect route. Browsers can't set custom
 // headers on a WebSocket handshake, so the client passes its Cognito access
-// token and the organization it wants dashboard events for as query string
-// parameters: wss://.../prod?orgId={orgId}&token={accessToken}. Rejecting
-// here (a non-200 response) refuses the connection outright — this is the
-// only enforcement point for "prevent users from receiving another
-// organization's events," so it has to check real org membership, not just
-// that the token is valid.
+// token and target org as query params: wss://.../prod?orgId={orgId}&token={accessToken}.
+// This is the only enforcement point stopping a user from receiving another
+// org's events, so it checks real org membership, not just token validity.
 public class ConnectFunction
 {
     private static readonly TimeSpan ConnectionTtl = TimeSpan.FromHours(2);
@@ -60,8 +57,6 @@ public class ConnectFunction
             return Deny("Unknown user.");
         }
 
-        // Query filter already scopes this to `organizationId` — an
-        // inactive or nonexistent membership means no row comes back.
         var isMember = await db.OrganizationMemberships.AnyAsync(m => m.UserId == user.Id && m.IsActive);
         if (!isMember)
         {

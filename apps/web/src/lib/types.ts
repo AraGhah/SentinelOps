@@ -1,7 +1,4 @@
-// Severity/status enums are serialized by ASP.NET Core as their underlying
-// numeric values (no JsonStringEnumConverter is registered — see
-// apps/api/Program.cs), so these mirror the ordinals from
-// apps/api/Domain/Incident.cs exactly. Do not reorder.
+// Mirrors apps/api/Domain/Incident.cs ordinals (serialized as numbers, no JsonStringEnumConverter). Do not reorder.
 export type IncidentSeverity = 0 | 1 | 2 | 3;
 export const SEVERITY_LABELS: Record<IncidentSeverity, string> = {
   0: 'Critical',
@@ -45,8 +42,7 @@ export type PagedResult<T> = {
   totalCount: number;
 };
 
-// Matches apps/api/Domain/OrganizationRole.cs. Ordinal order matters
-// (higher value == more privilege) — do not reorder.
+// Matches apps/api/Domain/OrganizationRole.cs. Higher value = more privilege; do not reorder.
 export type OrganizationRole = 0 | 1 | 2 | 3;
 export const ORGANIZATION_ROLE_LABELS: Record<OrganizationRole, string> = {
   0: 'Viewer',

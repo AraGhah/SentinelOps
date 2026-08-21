@@ -17,10 +17,8 @@ public class Incident : ITenantOwned
     public Guid? AssignedResponderUserId { get; set; }
     public IncidentStatus Status { get; set; } = IncidentStatus.Triggered;
     public int AlertCount { get; set; }
-    // Highest EscalationLevel.Order notified so far by the escalation state
-    // machine (see SentinelOps.Workers.Escalation). Null until an escalation
-    // policy has actually been engaged for this incident — a schedule-only
-    // assignment with no applicable policy never sets this.
+    // Highest EscalationLevel.Order notified so far. Null until an escalation policy
+    // is actually engaged; a schedule-only assignment never sets this.
     public int? CurrentEscalationLevel { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset? AcknowledgedAtUtc { get; set; }

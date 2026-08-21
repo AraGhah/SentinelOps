@@ -34,9 +34,7 @@ export function LoginForm() {
       if (!result) return;
 
       if ('mfaRequired' in result) {
-        // The challenge session token lives server-side in a short-lived
-        // httpOnly cookie (set by the login action) — only the email, which
-        // isn't sensitive, goes in the URL for display/prefill purposes.
+        // Challenge token stays server-side in the httpOnly cookie; only the (non-sensitive) email goes in the URL.
         router.push(`/login/mfa?email=${encodeURIComponent(result.email)}`);
         return;
       }

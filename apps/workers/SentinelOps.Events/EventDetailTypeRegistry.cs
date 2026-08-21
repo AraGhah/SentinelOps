@@ -2,12 +2,11 @@ using System.Text.Json;
 
 namespace SentinelOps.Events;
 
-// Lets a caller round-trip an IEventDetail through JSON when it only has the
-// runtime type's simple name to go on (e.g. a worker's persisted outbox —
-// see SentinelOps.Workers.Shared.OutboxItem — which can't store a .NET Type
-// directly). Deliberately keyed by short type name rather than
-// AssemblyQualifiedName so a redeployment/assembly-version bump can't break
-// deserialization of an outbox row written by a previous deployment.
+// Round-trips an IEventDetail through JSON given only the runtime type's simple
+// name (used by the worker outbox, see SentinelOps.Workers.Shared.OutboxItem, which
+// can't store a .NET Type directly). Keyed by short type name, not
+// AssemblyQualifiedName, so an assembly-version bump doesn't break deserialization
+// of outbox rows written by a previous deployment.
 public static class EventDetailTypeRegistry
 {
     private static readonly Dictionary<string, Type> Types = new()

@@ -2,14 +2,10 @@ using System.Text.Json;
 
 namespace SentinelOps.Api.Common;
 
-// Emits CloudWatch Embedded Metric Format (EMF) log lines directly to
-// stdout. ECS ships container stdout to ApiLogGroup via the awslogs log
-// driver (see ApiStack), and CloudWatch parses any EMF-shaped log line in
-// that group into a real custom metric automatically — no CloudWatch agent,
-// no extra IAM permission, and no PutMetricData call blocking the request
-// path. Deliberately bypasses ILogger (whose JSON console formatter would
-// re-escape this into a "message" string field, breaking EMF's requirement
-// that the raw log line itself be the metric JSON object).
+// Emits CloudWatch Embedded Metric Format (EMF) lines to stdout; CloudWatch parses
+// EMF-shaped lines in ApiLogGroup into real metrics automatically, no PutMetricData
+// call needed. Bypasses ILogger, whose JSON formatter would re-escape the line and
+// break EMF's requirement that the raw log line be the metric JSON object.
 public static class MetricsEmitter
 {
     public const string Namespace = "SentinelOps/Api";

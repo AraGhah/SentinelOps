@@ -2,8 +2,7 @@ namespace SentinelOps.Api.Reports;
 
 public interface IReportStorageService
 {
-    // Reports are server-generated (unlike attachments), so content is uploaded
-    // directly rather than via a presigned PUT — there's no client to hand a URL to.
+    // Reports are server-generated, so content is uploaded directly, no presigned PUT.
     Task<string> UploadHtmlAsync(Guid organizationId, Guid incidentId, Guid reportId, string html, CancellationToken ct);
 
     Task<string> UploadPdfAsync(Guid organizationId, Guid incidentId, Guid reportId, byte[] pdf, CancellationToken ct);

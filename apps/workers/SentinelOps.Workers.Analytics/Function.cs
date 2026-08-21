@@ -9,9 +9,8 @@ using SentinelOps.Workers.Shared;
 namespace SentinelOps.Workers.Analytics;
 
 // Wildcard consumer — its EventBridge rule matches every detail-type on the bus.
-// Doesn't need to know each event's specific shape, only the fields every
-// IEventDetail carries, so it writes one AnalyticsEvent row per event without a
-// switch over detail-type.
+// Only reads the common IEventDetail fields, so one AnalyticsEvent row is
+// written per event with no switch over detail-type.
 public class Function
 {
     public const string WorkerName = "analytics";
@@ -46,8 +45,7 @@ public class Function
             return;
         }
 
-        // No outbound publish here — the row write below is the entire unit
-        // of work, so the claim is Completed in the same commit.
+        // No outbound publish, so the claim completes in the same commit as the row write.
         claimRecord.Completed = true;
 
         db.AnalyticsEvents.Add(new AnalyticsEvent
@@ -67,6 +65,5 @@ public class Function
     }
 }
 
-// The subset of IEventDetail's fields needed here — deliberately not `IEventDetail`
-// itself, since that's an interface and can't be deserialized directly.
+// Subset of IEventDetail's fields; not IEventDetail itself since interfaces can't be deserialized.
 public record CommonEventFields(Guid EventId, Guid OrganizationId, Guid CorrelationId, DateTimeOffset OccurredAtUtc);

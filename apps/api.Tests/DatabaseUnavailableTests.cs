@@ -10,13 +10,10 @@ using SentinelOps.Events;
 
 namespace SentinelOps.Api.Tests;
 
-// A dedicated WebApplicationFactory (not the shared ApiTestFixture/Postgres
-// container every other test in the "Api" collection depends on) pointed at a
-// connection string that refuses to connect — the closest a test gets to
-// "the database is unavailable" without tearing down infrastructure other
-// tests need. Confirms GlobalExceptionHandler turns that into a clean 500
-// ProblemDetails response instead of an unhandled exception taking the host
-// down, and that the host keeps serving requests afterward.
+// A dedicated WebApplicationFactory pointed at a connection string that refuses to
+// connect, the closest a test gets to "database is unavailable." Confirms
+// GlobalExceptionHandler turns that into a clean 500 ProblemDetails response instead
+// of an unhandled exception taking the host down.
 public class DatabaseUnavailableTests
 {
     [Fact]
@@ -36,10 +33,7 @@ public class DatabaseUnavailableTests
         // (host/port/credentials) into the response body.
         Assert.DoesNotContain(body!, kv => kv.Value?.ToString()?.Contains("127.0.0.1", StringComparison.OrdinalIgnoreCase) == true);
 
-        // The host itself is still up — a DB-dependent request failing didn't
-        // take the whole process down. /healthz has no DB dependency
-        // (AddHealthChecks() is registered with no checks), so this passing
-        // proves the host, not the database, is what's being checked here.
+        // /healthz has no DB dependency, so this proves the host itself is still up.
         var health = await factory.CreateClient().GetAsync("/healthz");
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
     }

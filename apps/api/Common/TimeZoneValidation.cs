@@ -1,9 +1,7 @@
 namespace SentinelOps.Api.Common;
 
-// TimeZoneInfo.FindSystemTimeZoneById never returns null for an unknown id —
-// it throws. Centralizing the try/catch here keeps every caller (Schedules,
-// NotificationPreferences, Organizations) from repeating a null check that
-// can never trigger.
+// FindSystemTimeZoneById throws rather than returning null for an unknown id;
+// centralize the try/catch instead of repeating it in every caller.
 public static class TimeZoneValidation
 {
     public static bool IsValid(string timeZoneId)

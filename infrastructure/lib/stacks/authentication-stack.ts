@@ -38,10 +38,8 @@ export class AuthenticationStack extends cdk.Stack {
         emailBody: 'Welcome to SentinelOps. Your verification code is {####}.',
         emailStyle: cognito.VerificationEmailStyle.CODE,
       },
-      // Always RETAIN regardless of environment (including dev) — unlike
-      // Aurora/S3/DynamoDB, losing this invalidates every existing user's
-      // account, which is disruptive even for a throwaway dev stack. Not
-      // driven by config.removalPolicy.dataBearing on purpose.
+      // Always RETAIN, including dev: losing this invalidates every existing user's
+      // account. Not driven by config.removalPolicy.dataBearing on purpose.
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 

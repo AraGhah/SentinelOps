@@ -28,8 +28,7 @@ public class EscalationLevel : ITenantOwned
     public List<EscalationLevelTarget> Targets { get; set; } = [];
 }
 
-// Individual users only for now — there is no Team entity yet, so "assign users
-// or teams to each level" (per the checklist) is scoped down to users here.
+// Individual users only for now; no Team entity yet.
 public class EscalationLevelTarget : ITenantOwned
 {
     public Guid Id { get; set; }

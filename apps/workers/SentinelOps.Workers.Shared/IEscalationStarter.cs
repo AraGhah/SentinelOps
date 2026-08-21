@@ -5,9 +5,8 @@ using Amazon.StepFunctions.Model;
 namespace SentinelOps.Workers.Shared;
 
 // Narrow wrapper around the one Step Functions operation callers need
-// (start the escalation state machine) — same rationale as IQueueSender:
-// IAmazonStepFunctions is a large interface, this is what test doubles
-// implement instead.
+// (start the escalation state machine), so test doubles don't need all of
+// IAmazonStepFunctions.
 public interface IEscalationStarter
 {
     Task StartExecutionAsync(string stateMachineArn, string executionName, string inputJson, CancellationToken ct);

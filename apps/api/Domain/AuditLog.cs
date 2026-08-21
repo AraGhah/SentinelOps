@@ -1,10 +1,8 @@
 namespace SentinelOps.Api.Domain;
 
-// Immutable by construction: no controller ever exposes an update/delete path
-// for this entity. Unlike other business entities, OrganizationId is nullable
-// (some audited actions, e.g. login, happen before any organization context
-// has been resolved) so this does not implement ITenantOwned; its query
-// filter is configured directly in SentinelOpsDbContext instead.
+// Immutable: no controller exposes an update/delete path. OrganizationId is nullable
+// (some audited actions, e.g. login, happen before org context is resolved), so this
+// doesn't implement ITenantOwned; its query filter is configured directly in SentinelOpsDbContext.
 public class AuditLog
 {
     public Guid Id { get; set; }

@@ -4,9 +4,8 @@ using Amazon.SQS.Model;
 
 namespace SentinelOps.Workers.Shared;
 
-// Narrow wrapper around the one SQS operation the deduplication worker needs
-// (direct-send to the incident-creation queue) — IAmazonSQS itself is a huge
-// interface, so this is what test doubles implement instead.
+// Narrow wrapper around the one SQS operation the deduplication worker needs,
+// so test doubles don't have to implement all of IAmazonSQS.
 public interface IQueueSender
 {
     Task SendAsync(string queueUrl, string body, Guid correlationId, CancellationToken ct);
@@ -18,11 +17,8 @@ public class SqsQueueSender : IQueueSender
 
     public SqsQueueSender(string region) => _client = new AmazonSQSClient(RegionEndpoint.GetBySystemName(region));
 
-    // Correlation id also rides inside the JSON message body (every message
-    // record already carries it as a field) — this attribute is what makes it
-    // filterable/visible without deserializing the body, e.g. from the SQS
-    // console or a CloudWatch Logs Insights query against the queue's own
-    // access logging.
+    // Also set as a message attribute (in addition to the JSON body) so it's
+    // filterable without deserializing, e.g. from the SQS console.
     public Task SendAsync(string queueUrl, string body, Guid correlationId, CancellationToken ct) =>
         _client.SendMessageAsync(new SendMessageRequest
         {

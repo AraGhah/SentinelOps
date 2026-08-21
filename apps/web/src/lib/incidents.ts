@@ -11,10 +11,7 @@ export type IncidentsResult =
   | { status: 'error'; message: string }
   | { status: 'ready'; data: PagedResult<Incident> };
 
-// Server-side fetch of the org-scoped incidents list. Must run in a Server
-// Component or Server Action — it needs the httpOnly session cookie (for
-// the bearer token) and the active organization id (see FE-02), neither of
-// which a client component can read directly.
+// Must run server-side: needs the httpOnly session cookie and active org id, neither readable from a client component.
 export async function getIncidents(
   page: number,
   pageSize: number = DEFAULT_PAGE_SIZE,

@@ -5,11 +5,10 @@ using SentinelOps.Api.Schedules;
 
 namespace SentinelOps.Workers.Shared;
 
-// Shared between SentinelOps.Workers.ResponderAssignment (on incident.created)
-// and SentinelOps.Workers.Escalation's Restart handler (on a reopened
-// incident) — both need the exact same "who should be notified right now"
-// resolution: on-call schedule first, escalation policy's lowest-order level
-// as a fallback.
+// Shared between ResponderAssignment (on incident.created) and Escalation's
+// Restart handler (on a reopened incident): resolve who should be notified
+// right now — on-call schedule first, escalation policy's lowest-order level
+// as fallback.
 public static class ResponderResolver
 {
     public static async Task<Guid?> ResolveAsync(SentinelOpsDbContext db, Guid? serviceId, DateTimeOffset nowUtc)
@@ -32,11 +31,9 @@ public static class ResponderResolver
         return firstTarget?.UserId;
     }
 
-    // Service-scoped policy first, falling back to the org-wide default
-    // (ServiceId == null). Same resolution rule used to pick the responder
-    // above and to decide whether the Escalation state machine should engage
-    // at all — an incident with no applicable policy is assigned but never
-    // escalates.
+    // Service-scoped policy first, falling back to org-wide default
+    // (ServiceId == null). An incident with no applicable policy is assigned
+    // but never escalates.
     public static async Task<EscalationPolicy?> ResolveEscalationPolicyAsync(SentinelOpsDbContext db, Guid? serviceId) =>
         await db.EscalationPolicies
             .Include(p => p.Levels).ThenInclude(l => l.Targets)

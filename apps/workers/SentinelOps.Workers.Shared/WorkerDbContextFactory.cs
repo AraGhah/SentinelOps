@@ -5,11 +5,10 @@ using SentinelOps.Api.Tenancy;
 
 namespace SentinelOps.Workers.Shared;
 
-// Workers run outside any HTTP request, so there's no OrganizationRoleAuthorizationHandler
-// to populate ICurrentOrganizationAccessor the way controllers rely on. Every worker
-// instead knows the OrganizationId straight from the event it's handling, so this
-// builds a DbContext with that value pre-set — one instance per message, since
-// ICurrentOrganizationAccessor is meant to be scoped-per-request/message, not shared.
+// Workers run outside any HTTP request, so there's no
+// OrganizationRoleAuthorizationHandler to populate ICurrentOrganizationAccessor.
+// Builds a DbContext with the OrganizationId pre-set from the event instead —
+// one instance per message, since the accessor is scoped per-message, not shared.
 public static class WorkerDbContextFactory
 {
     public static SentinelOpsDbContext Create(string connectionString, Guid organizationId)
@@ -24,9 +23,8 @@ public static class WorkerDbContextFactory
         return new SentinelOpsDbContext(options, currentOrganization);
     }
 
-    // A handful of workers (analytics, audit-log) intentionally write rows that
-    // aren't scoped to a single organization's query filter — they use this
-    // instead, with an accessor that never resolves an OrganizationId.
+    // For workers (analytics, audit-log) that write rows not scoped to a
+    // single organization's query filter.
     public static SentinelOpsDbContext CreateUnscoped(string connectionString)
     {
         var options = new DbContextOptionsBuilder<SentinelOpsDbContext>()

@@ -19,25 +19,16 @@ using SentinelOps.Api.Reports;
 using SentinelOps.Api.Tenancy;
 using SentinelOps.Events;
 
-// Community license (free for small teams/companies) — required at startup by
-// QuestPDF or every document-generation call throws.
+// Community license required at startup or QuestPDF throws on every call.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
-// Must run before any AmazonServiceClient is constructed (every registration
-// below that builds one) — patches the SDK's request pipeline so each AWS
-// call becomes an X-Ray subsegment of whatever segment UseXRay opened for
-// the current request. Harmless with no X-Ray daemon listening (e.g. local
-// `dotnet run`): segments are sent over connectionless UDP and just drop.
+// Must run before any AmazonServiceClient is constructed below; patches the SDK
+// pipeline so AWS calls become X-Ray subsegments. Harmless with no X-Ray daemon.
 AWSSDKHandler.RegisterXRayForAllServices();
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Structured JSON logs to stdout — ECS ships them to ApiLogGroup via the
-// awslogs driver (see ApiStack). Replaces the default plain-text console
-// formatter; Debug/EventSource/EventLog providers from CreateBuilder's
-// defaults are dropped along with it; that's fine because this always runs
-// as a container, and MetricsEmitter's EMF lines below deliberately bypass
-// this pipeline entirely so they stay unwrapped JSON.
+// Structured JSON logs to stdout; ECS ships them to ApiLogGroup via the awslogs driver.
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options =>
 {
@@ -46,9 +37,8 @@ builder.Logging.AddJsonConsole(options =>
     options.UseUtcTimestamp = true;
 });
 
-// Overrides ConnectionStrings:SentinelOpsDb from the ECS-injected Secrets
-// Manager JSON when running in AWS; no-op locally (appsettings.json already
-// has a connection string there).
+// Overrides ConnectionStrings:SentinelOpsDb from ECS-injected Secrets Manager JSON;
+// no-op locally.
 ApiDbConnectionStringResolver.ApplyToConfiguration(builder.Configuration);
 
 // Add services to the container.
@@ -68,12 +58,8 @@ builder.Services.AddScoped<IAuthorizationHandler, OrganizationRoleAuthorizationH
 
 builder.Services.AddHealthChecks();
 
-// Graceful shutdown: on SIGTERM the host stops accepting new requests
-// immediately but waits up to this long for in-flight requests to finish
-// before forcing them closed. Matches ECS's container `stopTimeout` (see
-// ApiStack) — kept in sync deliberately, since a shorter value here than
-// ECS's SIGKILL deadline would just mean ECS does the killing instead of a
-// clean exit, and a longer one would get cut off by ECS regardless.
+// Must match ECS's container `stopTimeout` (see ApiStack) or ECS's SIGKILL cuts
+// requests off before a clean exit.
 builder.Host.ConfigureHostOptions(options => options.ShutdownTimeout = TimeSpan.FromSeconds(28));
 
 builder.Services.AddHsts(options =>
@@ -82,10 +68,8 @@ builder.Services.AddHsts(options =>
     options.IncludeSubDomains = true;
 });
 
-// apps/web is the only browser-based caller today; additional origins are
-// added here (or via CORS__ALLOWEDORIGINS__n env vars), never a wildcard,
-// since AllowCredentials() is required for the JWT bearer token to reach the
-// API from the browser.
+// Never a wildcard origin: AllowCredentials() is required for the JWT bearer token
+// to reach the API from the browser.
 builder.Services.AddCors(options => options.AddPolicy("Default", policy => policy
     .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
     .AllowAnyHeader()
@@ -122,9 +106,7 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
-    // Alert ingestion has no JWT `sub` to partition on — callers authenticate with
-    // a per-integration API key instead, so that's the partition key. Tighter than
-    // "api" since a single misbehaving source integration shouldn't need 100/10s.
+    // Alert ingestion has no JWT `sub`; partition by integration API key instead.
     options.AddPolicy("ingestion", httpContext =>
     {
         var partitionKey = httpContext.Request.RouteValues["integrationId"]?.ToString()
@@ -141,14 +123,9 @@ builder.Services.AddRateLimiter(options =>
     });
 });
 
-// A shared NpgsqlDataSource (rather than handing UseNpgsql a bare connection
-// string) is what DatabaseConnectionsMetricService opens its monitoring
-// connection through. Built lazily inside this factory delegate, not as a
-// top-level statement — ApiTestFixture overrides ConnectionStrings:SentinelOpsDb
-// via WebApplicationFactory's ConfigureAppConfiguration, which only takes
-// effect by the time DI resolves services, not at the point Program.cs's own
-// top-level code runs; reading builder.Configuration here immediately would
-// have captured the appsettings.json value instead of the test container's.
+// Built lazily inside this factory delegate, not read eagerly here: ApiTestFixture
+// overrides the connection string via WebApplicationFactory's ConfigureAppConfiguration,
+// which only takes effect by the time DI resolves services.
 builder.Services.AddSingleton(sp =>
     new NpgsqlDataSourceBuilder(sp.GetRequiredService<IConfiguration>().GetConnectionString("SentinelOpsDb")).Build());
 builder.Services.AddDbContext<SentinelOpsDbContext>((sp, options) =>
@@ -184,8 +161,7 @@ builder.Services
     .AddOptions<ReportStorageOptions>()
     .Bind(builder.Configuration.GetSection(ReportStorageOptions.SectionName))
     .ValidateDataAnnotations();
-// Reuses the IAmazonS3 singleton registered above for attachments — same
-// account/region, no need for a second S3 client just for a different bucket.
+// Reuses the IAmazonS3 singleton registered above for attachments.
 builder.Services.AddSingleton<IReportStorageService, S3ReportStorageService>();
 
 var cognitoOptions = builder.Configuration.GetSection(CognitoOptions.SectionName).Get<CognitoOptions>()!;
@@ -195,8 +171,7 @@ builder.Services
     .AddJwtBearer(options =>
     {
         options.Authority = cognitoOptions.Issuer;
-        // Cognito access tokens carry `client_id`, not `aud` — audience is
-        // validated manually below instead of via TokenValidationParameters.
+        // Cognito access tokens carry `client_id`, not `aud`; audience is validated manually below.
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -219,9 +194,8 @@ builder.Services
             },
         };
     })
-    // Second scheme, opted into explicitly via [Authorize(AuthenticationSchemes = ...)]
-    // on AlertIngestionController — never the default, so it can't accidentally
-    // authenticate a request meant for the JWT-protected org endpoints.
+    // Opt-in only via [Authorize(AuthenticationSchemes = ...)] on AlertIngestionController;
+    // never the default scheme.
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(
         ApiKeyAuthenticationHandler.SchemeName, _ => { });
 builder.Services.AddAuthorization(options =>
@@ -235,10 +209,7 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
-// Opens one X-Ray segment per request, wrapping every AWS SDK subsegment
-// AWSSDKHandler.RegisterXRayForAllServices() (above) records during it —
-// as early in the pipeline as possible so the segment covers the whole
-// request, exception handling included.
+// As early in the pipeline as possible so the segment covers the whole request.
 app.UseXRay("SentinelOpsApi");
 
 app.UseExceptionHandler();

@@ -59,6 +59,37 @@ describe('EventProcessingStack', () => {
     expect(withRedrive).toHaveLength(9);
   });
 
+  // A message that fails maxReceiveCount times lands in the DLQ automatically
+  // (SQS-managed redrive) rather than being dropped — that's what "replay
+  // from the DLQ" replays from. 5 is deliberately more than 1 so a single
+  // transient failure (a brief DB blip) doesn't dead-letter a message that
+  // would have succeeded on the very next attempt.
+  it('dead-letters a worker queue message after 5 failed receives', () => {
+    const template = synth();
+    const queues = template.findResources('AWS::SQS::Queue');
+    const workerQueues = Object.values(queues).filter(
+      (q: any) => q.Properties?.RedrivePolicy?.deadLetterTargetArn !== undefined,
+    );
+    for (const queue of workerQueues) {
+      expect((queue as any).Properties.RedrivePolicy.maxReceiveCount).toBe(5);
+    }
+  });
+
+  // Every worker Lambda's SQS event source is configured to report which
+  // individual messages in a batch failed (see SqsBatchProcessor in
+  // SentinelOps.Workers.Shared) — without this, SQS treats the whole batch as
+  // failed on any error, redelivering (and eventually dead-lettering) messages
+  // that already succeeded alongside the one that didn't.
+  it('configures every worker event source mapping to report partial batch failures', () => {
+    const template = synth();
+    const mappings = template.findResources('AWS::Lambda::EventSourceMapping');
+    const mappingList = Object.values(mappings);
+    expect(mappingList.length).toBeGreaterThan(0);
+    for (const mapping of mappingList) {
+      expect((mapping as any).Properties.FunctionResponseTypes).toEqual(['ReportBatchItemFailures']);
+    }
+  });
+
   it('creates 10 Lambda functions (7 single-queue workers + AttachmentScan + Escalation x2), on the dotnet10 runtime', () => {
     const template = synth();
     template.resourceCountIs('AWS::Lambda::Function', 10);

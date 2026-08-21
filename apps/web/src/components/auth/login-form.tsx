@@ -34,11 +34,10 @@ export function LoginForm() {
       if (!result) return;
 
       if ('mfaRequired' in result) {
-        const params = new URLSearchParams({
-          email: result.email,
-          session: result.challengeSession,
-        });
-        router.push(`/login/mfa?${params.toString()}`);
+        // The challenge session token lives server-side in a short-lived
+        // httpOnly cookie (set by the login action) — only the email, which
+        // isn't sensitive, goes in the URL for display/prefill purposes.
+        router.push(`/login/mfa?email=${encodeURIComponent(result.email)}`);
         return;
       }
 

@@ -44,7 +44,7 @@ public class NotificationPreferencesController(SentinelOpsDbContext db, ICurrent
         {
             return Problem(title: "Invalid request", detail: "Quiet hours require a time zone.", statusCode: 400);
         }
-        if (request.TimeZoneId is not null && TimeZoneInfo.FindSystemTimeZoneById(request.TimeZoneId) is null)
+        if (request.TimeZoneId is not null && !TimeZoneValidation.IsValid(request.TimeZoneId))
         {
             return Problem(title: "Invalid request", detail: "Unknown time zone id.", statusCode: 400);
         }

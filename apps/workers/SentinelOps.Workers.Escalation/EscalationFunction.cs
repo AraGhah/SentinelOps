@@ -84,40 +84,52 @@ public class EscalationFunction
         var nextLevel = policy.Levels.Where(l => l.Order > input.CurrentLevelOrder).OrderBy(l => l.Order).FirstOrDefault();
         if (nextLevel is not null)
         {
-            var targetUserIds = nextLevel.Targets.Select(t => t.UserId).ToList();
-
             // Step Functions can retry this task on a transient Lambda error,
             // which would otherwise re-notify the same level twice — guard
             // against that the same way every SQS-driven worker guards
             // against redelivery, keyed off (incident, level) instead of an
             // event id since there isn't one here.
-            if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, DeterministicEventId(incident.Id, nextLevel.Order), CancellationToken.None))
+            var levelEventId = DeterministicEventId(incident.Id, nextLevel.Order);
+            var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, levelEventId, CancellationToken.None);
+
+            if (claimState == ClaimState.AlreadyCompleted)
             {
-                await db.SaveChangesAsync(CancellationToken.None);
                 return input with { CurrentLevelOrder = nextLevel.Order, AckTimeoutSeconds = nextLevel.AckTimeoutMinutes * 60, Stop = false };
             }
 
+            if (claimState == ClaimState.PendingCompletion)
+            {
+                // A prior attempt already committed the notification rows and
+                // escalation-level bump but crashed/failed before publishing
+                // — don't re-notify the same targets again, just replay.
+                var pendingRetry = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
+                await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, pendingRetry, CancellationToken.None);
+                await IdempotencyGuard.CompleteAsync(db, WorkerName, levelEventId, CancellationToken.None);
+                return input with { CurrentLevelOrder = nextLevel.Order, AckTimeoutSeconds = nextLevel.AckTimeoutMinutes * 60, Stop = false };
+            }
+
+            var targetUserIds = nextLevel.Targets.Select(t => t.UserId).ToList();
             var notifications = targetUserIds.Select(userId => NewNotification(input.OrganizationId, incident.Id, userId)).ToList();
             db.Notifications.AddRange(notifications);
             incident.CurrentEscalationLevel = nextLevel.Order;
             IncidentTimeline.Record(db, input.OrganizationId, incident.Id, IncidentEventType.Escalated, actorUserId: null,
                 details: new { FromLevel = input.CurrentLevelOrder, ToLevel = nextLevel.Order, TargetUserIds = targetUserIds });
-            await db.SaveChangesAsync(CancellationToken.None);
 
-            foreach (var notification in notifications)
-            {
-                await _eventPublisher.PublishAsync(EventSources.EscalationWorker, EventTypes.NotificationRequested,
-                    new NotificationRequestedDetail(
-                        Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
-                        notification.Id, incident.Id, notification.RecipientUserId, notification.Channel),
-                    CancellationToken.None);
-            }
-
-            await _eventPublisher.PublishAsync(EventSources.EscalationWorker, EventTypes.IncidentEscalated,
+            var items = notifications.Select(notification => OutboxItem.EventBridge(
+                EventSources.EscalationWorker, EventTypes.NotificationRequested,
+                new NotificationRequestedDetail(
+                    Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
+                    notification.Id, incident.Id, notification.RecipientUserId, notification.Channel))).ToList();
+            items.Add(OutboxItem.EventBridge(EventSources.EscalationWorker, EventTypes.IncidentEscalated,
                 new IncidentEscalatedDetail(
                     Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
-                    incident.Id, input.CurrentLevelOrder, nextLevel.Order, targetUserIds.FirstOrDefault()),
-                CancellationToken.None);
+                    incident.Id, input.CurrentLevelOrder, nextLevel.Order, targetUserIds.FirstOrDefault())));
+
+            claimRecord.PendingOutboxJson = OutboxItem.SerializeList(items);
+            await db.SaveChangesAsync(CancellationToken.None);
+
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, items, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, levelEventId, CancellationToken.None);
 
             WorkerLog.Info(context, WorkerName, "Escalated to next level.",
                 Guid.NewGuid(), input.OrganizationId, input.CorrelationId,
@@ -135,9 +147,19 @@ public class EscalationFunction
             // every real level, including across policies with different
             // level counts.
             const int fallbackLevelOrder = int.MaxValue;
-            if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, DeterministicEventId(incident.Id, fallbackLevelOrder), CancellationToken.None))
+            var fallbackEventId = DeterministicEventId(incident.Id, fallbackLevelOrder);
+            var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, fallbackEventId, CancellationToken.None);
+
+            if (claimState == ClaimState.AlreadyCompleted)
             {
-                await db.SaveChangesAsync(CancellationToken.None);
+                return input with { FallbackNotified = true, AckTimeoutSeconds = (int)FallbackAckTimeout.TotalSeconds, Stop = false };
+            }
+
+            if (claimState == ClaimState.PendingCompletion)
+            {
+                var pendingRetry = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
+                await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, pendingRetry, CancellationToken.None);
+                await IdempotencyGuard.CompleteAsync(db, WorkerName, fallbackEventId, CancellationToken.None);
                 return input with { FallbackNotified = true, AckTimeoutSeconds = (int)FallbackAckTimeout.TotalSeconds, Stop = false };
             }
 
@@ -145,18 +167,24 @@ public class EscalationFunction
             db.Notifications.Add(notification);
             IncidentTimeline.Record(db, input.OrganizationId, incident.Id, IncidentEventType.Escalated, actorUserId: null,
                 details: new { FromLevel = input.CurrentLevelOrder, ToLevel = fallbackLevelOrder, TargetUserIds = new[] { adminId } });
+
+            var items = new List<OutboxItem>
+            {
+                OutboxItem.EventBridge(EventSources.EscalationWorker, EventTypes.NotificationRequested,
+                    new NotificationRequestedDetail(
+                        Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
+                        notification.Id, incident.Id, adminId, notification.Channel)),
+                OutboxItem.EventBridge(EventSources.EscalationWorker, EventTypes.IncidentEscalated,
+                    new IncidentEscalatedDetail(
+                        Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
+                        incident.Id, input.CurrentLevelOrder, fallbackLevelOrder, adminId)),
+            };
+
+            claimRecord.PendingOutboxJson = OutboxItem.SerializeList(items);
             await db.SaveChangesAsync(CancellationToken.None);
 
-            await _eventPublisher.PublishAsync(EventSources.EscalationWorker, EventTypes.NotificationRequested,
-                new NotificationRequestedDetail(
-                    Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
-                    notification.Id, incident.Id, adminId, notification.Channel),
-                CancellationToken.None);
-            await _eventPublisher.PublishAsync(EventSources.EscalationWorker, EventTypes.IncidentEscalated,
-                new IncidentEscalatedDetail(
-                    Guid.NewGuid(), input.OrganizationId, input.CorrelationId, DateTimeOffset.UtcNow,
-                    incident.Id, input.CurrentLevelOrder, fallbackLevelOrder, adminId),
-                CancellationToken.None);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, items, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, fallbackEventId, CancellationToken.None);
 
             WorkerLog.Info(context, WorkerName, "Escalated to fallback administrator.",
                 Guid.NewGuid(), input.OrganizationId, input.CorrelationId, new { incidentId = incident.Id, adminId });

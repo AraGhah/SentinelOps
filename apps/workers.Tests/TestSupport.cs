@@ -75,6 +75,51 @@ public class FakeQueueSender : IQueueSender
     }
 }
 
+// Throws on the first `failCount` calls to PublishAsync (simulating an
+// EventBridge PutEvents failure, a network blip, etc. — see WRK-01), then
+// behaves exactly like FakeEventPublisher on every call after that. Used to
+// exercise the "business state committed, publish failed, redelivery must
+// retry the publish without redoing business logic" path.
+public class FlakyEventPublisher(int failCount = 1) : IEventPublisher
+{
+    private int _calls;
+
+    public ConcurrentBag<FakeEventPublisher.PublishedEvent> Published { get; } = [];
+
+    public Task PublishAsync(string source, string detailType, IEventDetail detail, CancellationToken ct)
+    {
+        var call = Interlocked.Increment(ref _calls);
+        if (call <= failCount)
+        {
+            throw new InvalidOperationException($"Simulated publish failure (attempt {call}).");
+        }
+
+        Published.Add(new FakeEventPublisher.PublishedEvent(source, detailType, detail));
+        return Task.CompletedTask;
+    }
+}
+
+// Same idea as FlakyEventPublisher but for the deduplication worker's direct
+// SQS hand-off to incident-creation.
+public class FlakyQueueSender(int failCount = 1) : IQueueSender
+{
+    private int _calls;
+
+    public ConcurrentBag<FakeQueueSender.SentMessage> Sent { get; } = [];
+
+    public Task SendAsync(string queueUrl, string body, Guid correlationId, CancellationToken ct)
+    {
+        var call = Interlocked.Increment(ref _calls);
+        if (call <= failCount)
+        {
+            throw new InvalidOperationException($"Simulated send failure (attempt {call}).");
+        }
+
+        Sent.Add(new FakeQueueSender.SentMessage(queueUrl, body, correlationId));
+        return Task.CompletedTask;
+    }
+}
+
 public class FakeEscalationStarter : IEscalationStarter
 {
     public record StartedExecution(string StateMachineArn, string ExecutionName, string InputJson);

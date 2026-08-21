@@ -51,6 +51,20 @@ public class S3AttachmentStorageService(IAmazonS3 s3, IOptions<AttachmentStorage
         await s3.DeleteObjectAsync(new DeleteObjectRequest { BucketName = options.Value.BucketName, Key = storageKey }, ct);
     }
 
+    public async Task<long?> GetObjectSizeAsync(string storageKey, CancellationToken ct)
+    {
+        try
+        {
+            var metadata = await s3.GetObjectMetadataAsync(
+                new GetObjectMetadataRequest { BucketName = options.Value.BucketName, Key = storageKey }, ct);
+            return metadata.ContentLength;
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
     private static string SanitizeFileName(string fileName)
     {
         var invalid = Path.GetInvalidFileNameChars();

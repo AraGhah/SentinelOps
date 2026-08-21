@@ -27,13 +27,8 @@ public class Function
 
     public Function(string connectionString) => _connectionString = connectionString;
 
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
-    {
-        foreach (var record in sqsEvent.Records)
-        {
-            await HandleAsync(record, context);
-        }
-    }
+    public Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context) =>
+        SqsBatchProcessor.RunAsync(sqsEvent, context, WorkerName, record => HandleAsync(record, context));
 
     private async Task HandleAsync(SQSEvent.SQSMessage record, ILambdaContext context)
     {
@@ -54,11 +49,16 @@ public class Function
 
         await using var db = WorkerDbContextFactory.Create(_connectionString, organizationId);
 
-        if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, finding.EventId, CancellationToken.None))
+        var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, finding.EventId, CancellationToken.None);
+        if (claimState != ClaimState.Claimed)
         {
             WorkerLog.Info(context, WorkerName, "Duplicate delivery, skipping.", finding.EventId, organizationId, Guid.NewGuid());
             return;
         }
+
+        // No outbound publish here — the row write is the entire unit of
+        // work, so the claim is Completed in the same commit either way.
+        claimRecord.Completed = true;
 
         var attachment = await db.Attachments.FirstOrDefaultAsync(a => a.StorageKey == finding.ObjectKey);
         if (attachment is null)

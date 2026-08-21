@@ -49,6 +49,10 @@ public class EscalationPoliciesController(SentinelOpsDbContext db, IAuditLogger 
         var validationError = ValidateLevels(request.Levels);
         if (validationError is not null) return Problem(title: "Invalid request", detail: validationError, statusCode: 400);
 
+        var memberError = await ValidateMembersAsync(
+            orgId, request.FallbackAdministratorUserId, request.Levels.SelectMany(l => l.TargetUserIds), ct);
+        if (memberError is not null) return Problem(title: "Invalid request", detail: memberError, statusCode: 400);
+
         var now = DateTimeOffset.UtcNow;
         var policy = new EscalationPolicy
         {
@@ -99,6 +103,9 @@ public class EscalationPoliciesController(SentinelOpsDbContext db, IAuditLogger 
         var policy = await Find(orgId, policyId, ct);
         if (policy is null) return NotFound();
 
+        var memberError = await ValidateMembersAsync(orgId, request.FallbackAdministratorUserId, [], ct);
+        if (memberError is not null) return Problem(title: "Invalid request", detail: memberError, statusCode: 400);
+
         policy.Name = request.Name.Trim();
         policy.Description = request.Description;
         policy.ServiceId = request.ServiceId;
@@ -145,6 +152,9 @@ public class EscalationPoliciesController(SentinelOpsDbContext db, IAuditLogger 
         {
             return Problem(title: "Invalid request", detail: "A level must have at least one target.", statusCode: 400);
         }
+
+        var memberError = await ValidateMembersAsync(orgId, null, request.TargetUserIds, ct);
+        if (memberError is not null) return Problem(title: "Invalid request", detail: memberError, statusCode: 400);
 
         var level = new EscalationLevel
         {
@@ -202,6 +212,27 @@ public class EscalationPoliciesController(SentinelOpsDbContext db, IAuditLogger 
         if (levels.Count > MaxLevels) return $"A policy may have at most {MaxLevels} levels.";
         if (levels.Select(l => l.Order).Distinct().Count() != levels.Count) return "Escalation level order values must be unique.";
         if (levels.Any(l => l.TargetUserIds.Count == 0)) return "Every escalation level must have at least one target.";
+        return null;
+    }
+
+    // Every EscalationLevelTarget.UserId and FallbackAdministratorUserId must
+    // reference an active member of this org — otherwise escalation would
+    // silently notify (or fail to notify) someone who isn't actually part of
+    // the team.
+    private async Task<string?> ValidateMembersAsync(
+        Guid orgId, Guid? fallbackAdministratorUserId, IEnumerable<Guid> targetUserIds, CancellationToken ct)
+    {
+        var candidateIds = targetUserIds.ToHashSet();
+        if (fallbackAdministratorUserId is not null) candidateIds.Add(fallbackAdministratorUserId.Value);
+
+        foreach (var userId in candidateIds)
+        {
+            if (!await db.IsActiveMemberAsync(orgId, userId, ct))
+            {
+                return $"User {userId} is not an active member of this organization.";
+            }
+        }
+
         return null;
     }
 

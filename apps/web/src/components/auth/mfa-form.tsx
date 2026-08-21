@@ -17,7 +17,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 
-export function MfaForm({ email, challengeSession }: { email: string; challengeSession: string }) {
+export function MfaForm({ email }: { email: string }) {
   const [isPending, startTransition] = useTransition();
 
   const form = useForm<MfaCodeInput>({
@@ -27,7 +27,7 @@ export function MfaForm({ email, challengeSession }: { email: string; challengeS
 
   function onSubmit(values: MfaCodeInput) {
     startTransition(async () => {
-      const result = await verifyMfa({ email, code: values.code, challengeSession });
+      const result = await verifyMfa({ email, code: values.code });
       if (result?.error) {
         toast.error(result.error);
       }

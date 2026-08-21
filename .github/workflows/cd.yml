@@ -1,7 +1,15 @@
 name: CD
 
+# Gated on the CI workflow (see ci.yml's `name: CI`) succeeding on main,
+# rather than triggering independently off the same `push: branches: [main]`
+# event — previously CD could run (and deploy) even when CI had failed on the
+# exact same commit, since GitHub Actions doesn't serialize/order two
+# workflows triggered by the same push. `workflow_run` + the `if:` guard
+# below make CD wait for CI's conclusion and only proceed on success.
 on:
-  push:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -10,12 +18,19 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
+  # apps/web is hosted on Vercel now — FrontendStack (ALB/CloudFront/WAF/NAT
+  # share) is skipped via deployFrontend=false below, and e2e-staging targets
+  # this fixed alias instead of a CloudFormation output.
+  VERCEL_STAGING_URL: https://sentinel-ops-ashen-beta.vercel.app
 
 jobs:
   build-and-push:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -27,8 +42,8 @@ jobs:
 
       - name: Build and push API image
         run: |
-          docker build -f apps/api/Dockerfile -t "${{ steps.ecr-login.outputs.registry }}/sentinelops-api:${{ github.sha }}" .
-          docker push "${{ steps.ecr-login.outputs.registry }}/sentinelops-api:${{ github.sha }}"
+          docker build -f apps/api/Dockerfile -t "${{ steps.ecr-login.outputs.registry }}/sentinelops-api:${{ github.event.workflow_run.head_sha }}" .
+          docker push "${{ steps.ecr-login.outputs.registry }}/sentinelops-api:${{ github.event.workflow_run.head_sha }}"
 
       # NOTE: apps/web/Dockerfile is currently a local-dev-only image (runs
       # `npm run dev`, no production build) — a known gap documented in
@@ -38,8 +53,8 @@ jobs:
       # failure is visible rather than hiding a broken frontend deploy.
       - name: Build and push frontend image
         run: |
-          docker build -f apps/web/Dockerfile -t "${{ steps.ecr-login.outputs.registry }}/sentinelops-frontend:${{ github.sha }}" apps/web
-          docker push "${{ steps.ecr-login.outputs.registry }}/sentinelops-frontend:${{ github.sha }}"
+          docker build -f apps/web/Dockerfile -t "${{ steps.ecr-login.outputs.registry }}/sentinelops-frontend:${{ github.event.workflow_run.head_sha }}" apps/web
+          docker push "${{ steps.ecr-login.outputs.registry }}/sentinelops-frontend:${{ github.event.workflow_run.head_sha }}"
 
   deploy-staging:
     needs: build-and-push
@@ -50,6 +65,8 @@ jobs:
       frontend-domain: ${{ steps.outputs.outputs.frontend-domain }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -67,27 +84,30 @@ jobs:
         run: |
           npx cdk deploy \
             -c env=staging \
-            -c apiImageTag=${{ github.sha }} \
-            -c frontendImageTag=${{ github.sha }} \
+            -c apiImageTag=${{ github.event.workflow_run.head_sha }} \
+            -c frontendImageTag=${{ github.event.workflow_run.head_sha }} \
+            -c deployFrontend=false \
+            -c deployCustomDomain=false \
             --all --require-approval never
 
-      # e2e-staging targets these instead of the (still-placeholder) custom
-      # domains — see tests/e2e/playwright.config.ts.
+      # e2e-staging's frontend target is the Vercel alias (VERCEL_STAGING_URL
+      # above), not a CloudFormation output — FrontendStack is skipped via
+      # deployFrontend=false.
       - name: Read stack outputs for the e2e job
         id: outputs
         run: |
           API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name SentinelOpsApiStaging \
             --query "Stacks[0].Outputs[?OutputKey=='ApiHttpApiEndpoint'].OutputValue" --output text)
-          FRONTEND_DOMAIN=$(aws cloudformation describe-stacks --stack-name SentinelOpsFrontendStaging \
-            --query "Stacks[0].Outputs[?OutputKey=='FrontendDistributionDomainName'].OutputValue" --output text)
           echo "api-endpoint=$API_ENDPOINT" >> "$GITHUB_OUTPUT"
-          echo "frontend-domain=https://$FRONTEND_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "frontend-domain=$VERCEL_STAGING_URL" >> "$GITHUB_OUTPUT"
 
   e2e-staging:
     needs: deploy-staging
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -111,6 +131,8 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -128,6 +150,8 @@ jobs:
         run: |
           npx cdk deploy \
             -c env=production \
-            -c apiImageTag=${{ github.sha }} \
-            -c frontendImageTag=${{ github.sha }} \
+            -c apiImageTag=${{ github.event.workflow_run.head_sha }} \
+            -c frontendImageTag=${{ github.event.workflow_run.head_sha }} \
+            -c deployFrontend=false \
+            -c deployCustomDomain=false \
             --all --require-approval never

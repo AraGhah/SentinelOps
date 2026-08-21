@@ -823,8 +823,16 @@ namespace SentinelOps.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<bool>("Completed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid>("EventId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("PendingOutboxJson")
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("ProcessedAtUtc")
                         .HasColumnType("timestamp with time zone");

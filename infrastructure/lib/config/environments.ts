@@ -37,6 +37,22 @@ export interface EnvironmentConfig {
     hostedZoneNameDefault: string;
   };
   notificationDomainNameDefault: string;
+  // Monthly AWS Budget limit in USD (see ObservabilityStack) — a rough cap
+  // per environment, not a precise cost projection. See docs/costs.md for
+  // the estimate this is based on.
+  monthlyBudgetUsd: number;
+  // Exact browser origins allowed to call the API and upload attachments
+  // directly to S3 (ApiStack's CORS policy + StorageStack's attachments
+  // bucket CORS rules — see both for why this must be an exact origin list,
+  // never a wildcard). This is apps/web's *deployed* origin — if apps/web is
+  // hosted somewhere other than this app's own FrontendStack (e.g. Vercel),
+  // put that origin here instead/as well: a Vercel production domain
+  // (`https://your-app.vercel.app` or a custom domain) and, if preview
+  // deployments need to hit this environment's API too, each preview origin
+  // (Vercel preview URLs aren't a fixed pattern you can wildcard against
+  // AllowCredentials CORS, so add them individually as needed, or point
+  // previews at the dev environment's API instead).
+  corsAllowedOrigins: string[];
 }
 
 export const environments: Record<EnvironmentName, EnvironmentConfig> = {
@@ -55,6 +71,8 @@ export const environments: Record<EnvironmentName, EnvironmentConfig> = {
       hostedZoneNameDefault: 'sentinelops.example',
     },
     notificationDomainNameDefault: 'alerts-dev.sentinelops.example',
+    monthlyBudgetUsd: 50,
+    corsAllowedOrigins: ['http://localhost:3000'],
   },
   staging: {
     envName: 'staging',
@@ -71,6 +89,10 @@ export const environments: Record<EnvironmentName, EnvironmentConfig> = {
       hostedZoneNameDefault: 'sentinelops.example',
     },
     notificationDomainNameDefault: 'alerts-staging.sentinelops.example',
+    monthlyBudgetUsd: 150,
+    // apps/web's real staging origin (Vercel — see cd.yml's
+    // VERCEL_STAGING_URL). Keep this in sync if that alias ever changes.
+    corsAllowedOrigins: ['https://sentinel-ops-ashen-beta.vercel.app'],
   },
   production: {
     envName: 'production',
@@ -90,6 +112,11 @@ export const environments: Record<EnvironmentName, EnvironmentConfig> = {
       hostedZoneNameDefault: 'sentinelops.example',
     },
     notificationDomainNameDefault: 'alerts.sentinelops.example',
+    monthlyBudgetUsd: 500,
+    // Placeholder — see the staging entry's comment. Set to apps/web's real
+    // production origin (e.g. your Vercel production domain/custom domain)
+    // before deploying.
+    corsAllowedOrigins: [],
   },
 };
 

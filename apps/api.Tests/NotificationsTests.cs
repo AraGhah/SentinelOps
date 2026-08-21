@@ -19,7 +19,9 @@ public class NotificationsTests(ApiTestFixture fixture)
         var client = fixture.Factory.CreateClientFor(owner);
         var org = await CreateOrganizationAsync(client, "Resolution Notif Org");
 
-        var responderId = Guid.NewGuid();
+        var responderSub = TestClientFactory.NewSub();
+        var responderId = await InviteAndAcceptUserIdAsync(
+            fixture, client, org.Id, responderSub, $"{responderSub}@test.local", OrganizationRole.Responder);
         var createResponse = await client.PostAsJsonAsync(
             $"/api/v1/organizations/{org.Id}/incidents",
             new CreateIncidentRequest("Payments down", null, IncidentSeverity.Critical, null, responderId));

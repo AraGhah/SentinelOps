@@ -76,6 +76,60 @@ public class AttachmentsTests(ApiTestFixture fixture)
     }
 
     [Fact]
+    public async Task Create_UsesActualS3ObjectSize_NotClientClaimedSize()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Attachments Actual Size Org");
+        var incident = await CreateIncidentAsync(client, org.Id);
+
+        var uploadUrlResponse = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents/{incident.Id}/attachments/upload-url",
+            new CreateUploadUrlRequest("photo.png", "image/png", 2048));
+        uploadUrlResponse.EnsureSuccessStatusCode();
+        var uploadUrl = await uploadUrlResponse.Content.ReadFromJsonAsync<UploadUrlResponse>(Json.Options);
+
+        // Simulate a client that actually uploaded more bytes than it later
+        // claims in Create — the persisted record must reflect what S3 has,
+        // not the client's SizeBytes.
+        fixture.AttachmentStorage.SetObjectSize(uploadUrl!.StorageKey, 9999);
+
+        var createResponse = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents/{incident.Id}/attachments",
+            new CreateAttachmentRequest("photo.png", "image/png", 2048, uploadUrl.StorageKey));
+        createResponse.EnsureSuccessStatusCode();
+        var attachment = await createResponse.Content.ReadFromJsonAsync<AttachmentResponse>(Json.Options);
+
+        Assert.Equal(9999, attachment!.SizeBytes);
+    }
+
+    [Fact]
+    public async Task Create_RejectsWhenActualS3ObjectExceedsMaxSize()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Attachments Actual Oversize Org");
+        var incident = await CreateIncidentAsync(client, org.Id);
+
+        var uploadUrlResponse = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents/{incident.Id}/attachments/upload-url",
+            new CreateUploadUrlRequest("photo.png", "image/png", 2048));
+        uploadUrlResponse.EnsureSuccessStatusCode();
+        var uploadUrl = await uploadUrlResponse.Content.ReadFromJsonAsync<UploadUrlResponse>(Json.Options);
+
+        // Client lied about SizeBytes at upload-url time — the actual object
+        // it pushed to S3 blows the cap, and Create must catch this even
+        // though the claimed SizeBytes here is within policy.
+        fixture.AttachmentStorage.SetObjectSize(uploadUrl!.StorageKey, AttachmentPolicy.MaxSizeBytes + 1);
+
+        var createResponse = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents/{incident.Id}/attachments",
+            new CreateAttachmentRequest("photo.png", "image/png", 2048, uploadUrl.StorageKey));
+
+        Assert.Equal(HttpStatusCode.BadRequest, createResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task Create_RejectsStorageKeyFromAnotherIncident()
     {
         var owner = TestClientFactory.NewSub();

@@ -42,7 +42,7 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
     [Authorize(Policy = OrgPolicies.Administrator)]
     public async Task<ActionResult<ScheduleResponse>> Create(Guid orgId, CreateScheduleRequest request, CancellationToken ct)
     {
-        if (TimeZoneInfo.FindSystemTimeZoneById(request.TimeZoneId) is null)
+        if (!TimeZoneValidation.IsValid(request.TimeZoneId))
         {
             return Problem(title: "Invalid request", detail: "Unknown time zone id.", statusCode: 400);
         }
@@ -73,6 +73,11 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
     {
         var schedule = await Find(orgId, scheduleId, ct);
         if (schedule is null) return NotFound();
+
+        if (!TimeZoneValidation.IsValid(request.TimeZoneId))
+        {
+            return Problem(title: "Invalid request", detail: "Unknown time zone id.", statusCode: 400);
+        }
 
         schedule.Name = request.Name.Trim();
         schedule.ServiceId = request.ServiceId;
@@ -118,6 +123,13 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
     {
         var scheduleExists = await db.Schedules.AnyAsync(s => s.OrganizationId == orgId && s.Id == scheduleId, ct);
         if (!scheduleExists) return NotFound();
+
+        if (!await db.IsActiveMemberAsync(orgId, request.ResponderUserId, ct))
+        {
+            return Problem(
+                title: "Invalid request", detail: "ResponderUserId is not an active member of this organization.",
+                statusCode: 400);
+        }
 
         var rotation = new ScheduleRotation
         {
@@ -181,6 +193,20 @@ public class SchedulesController(SentinelOpsDbContext db, ICurrentUserService cu
         if (request.EndsAtUtc <= request.StartsAtUtc)
         {
             return Problem(title: "Invalid request", detail: "EndsAtUtc must be after StartsAtUtc.", statusCode: 400);
+        }
+
+        if (request.ResponderUserId is not null && !await db.IsActiveMemberAsync(orgId, request.ResponderUserId.Value, ct))
+        {
+            return Problem(
+                title: "Invalid request", detail: "ResponderUserId is not an active member of this organization.",
+                statusCode: 400);
+        }
+        if (request.OriginalResponderUserId is not null
+            && !await db.IsActiveMemberAsync(orgId, request.OriginalResponderUserId.Value, ct))
+        {
+            return Problem(
+                title: "Invalid request", detail: "OriginalResponderUserId is not an active member of this organization.",
+                statusCode: 400);
         }
 
         var actor = await currentUserService.GetOrProvisionAsync(ct);

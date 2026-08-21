@@ -67,13 +67,8 @@ public class Function
         _fingerprintStore = fingerprintStore;
     }
 
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
-    {
-        foreach (var record in sqsEvent.Records)
-        {
-            await HandleAsync(record, context);
-        }
-    }
+    public Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context) =>
+        SqsBatchProcessor.RunAsync(sqsEvent, context, WorkerName, record => HandleAsync(record, context));
 
     private async Task HandleAsync(SQSEvent.SQSMessage record, ILambdaContext context)
     {
@@ -83,10 +78,27 @@ public class Function
 
         await using var db = WorkerDbContextFactory.Create(_connectionString, detail.OrganizationId);
 
-        if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, detail.EventId, CancellationToken.None))
+        var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, detail.EventId, CancellationToken.None);
+        if (claimState == ClaimState.AlreadyCompleted)
         {
             WorkerLog.Info(context, WorkerName, "Duplicate delivery, skipping.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId);
+            return;
+        }
+
+        if (claimState == ClaimState.PendingCompletion)
+        {
+            // A prior attempt already committed its business-state write (the
+            // claim row itself, for the "unique" branch, or the incident
+            // attach for the "duplicate" branch — see below) but crashed/
+            // failed before the hand-off/publish made it out. Don't re-touch
+            // the fingerprint store or re-derive which branch this was — just
+            // replay exactly what was captured then.
+            WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
+                detail.EventId, detail.OrganizationId, detail.CorrelationId);
+            var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, _queueSender, null, pending, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
             return;
         }
 
@@ -100,19 +112,25 @@ public class Function
         if (touched.AlertCount == 1)
         {
             // First alert for this fingerprint — commit the idempotency claim
-            // and hand off. Only the caller that observes AlertCount == 1 from
-            // the atomic Touch ever takes this branch, even under concurrent
-            // invocations, so this can't race with another "unique" decision
-            // for the same fingerprint.
+            // (with the hand-off message captured as a pending outbox item,
+            // not yet sent) and hand off. Only the caller that observes
+            // AlertCount == 1 from the atomic Touch ever takes this branch,
+            // even under concurrent invocations, so this can't race with
+            // another "unique" decision for the same fingerprint.
+            var request = new IncidentCreationRequest(
+                Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow, detail.AlertId, fingerprint);
+            var items = new List<OutboxItem>
+            {
+                OutboxItem.Queue(_incidentCreationQueueUrl, JsonSerializer.Serialize(request, EventJson.Options), detail.CorrelationId),
+            };
+            claimRecord.PendingOutboxJson = OutboxItem.SerializeList(items);
             await db.SaveChangesAsync(CancellationToken.None);
 
             WorkerLog.Info(context, WorkerName, "Alert is unique, handing off to incident-creation.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId, new { fingerprint });
 
-            var request = new IncidentCreationRequest(
-                Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow, detail.AlertId, fingerprint);
-            await _queueSender.SendAsync(
-                _incidentCreationQueueUrl, JsonSerializer.Serialize(request, EventJson.Options), detail.CorrelationId, CancellationToken.None);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, _queueSender, null, items, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
             return;
         }
 
@@ -143,7 +161,25 @@ public class Function
         alert.IncidentId = incident.Id;
 
         var oldCount = incident.AlertCount;
-        incident.AlertCount++;
+
+        // Atomic SQL-side increment (SET AlertCount = AlertCount + 1) instead
+        // of a read-modify-write on the in-memory value — concurrent
+        // duplicate-alert processing for the same incident would otherwise
+        // lose updates (two invocations both reading AlertCount == N both
+        // write back N + 1 instead of N + 2).
+        await db.Incidents.Where(i => i.Id == incident.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(i => i.AlertCount, i => i.AlertCount + 1), CancellationToken.None);
+        var newCount = await db.Incidents.Where(i => i.Id == incident.Id)
+            .Select(i => i.AlertCount).FirstAsync(CancellationToken.None);
+
+        // Sync the tracked entity's in-memory value for the severity-floor
+        // check below, but tell the change tracker not to write AlertCount
+        // again in the SaveChangesAsync below — that column was already
+        // updated atomically above, and re-including it here (still holding
+        // the pre-increment snapshot as EF's baseline) would stomp any
+        // further concurrent increment that landed in between.
+        incident.AlertCount = newCount;
+        db.Entry(incident).Property(i => i.AlertCount).IsModified = false;
 
         var oldSeverity = incident.Severity;
         var volumeFloor = VolumeEscalationFloor(incident.AlertCount);
@@ -159,34 +195,38 @@ public class Function
             incident.ResolvedAtUtc = null;
         }
 
+        var attachItems = new List<OutboxItem>
+        {
+            OutboxItem.EventBridge(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
+                new IncidentUpdatedDetail(
+                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
+                    incident.Id, "AlertCount", oldCount.ToString(), incident.AlertCount.ToString())),
+        };
+
+        if (oldSeverity != incident.Severity)
+        {
+            attachItems.Add(OutboxItem.EventBridge(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
+                new IncidentUpdatedDetail(
+                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
+                    incident.Id, "Severity", oldSeverity.ToString(), incident.Severity.ToString())));
+        }
+
+        if (wasResolved)
+        {
+            attachItems.Add(OutboxItem.EventBridge(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
+                new IncidentUpdatedDetail(
+                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
+                    incident.Id, "Status", IncidentStatus.Resolved.ToString(), IncidentStatus.Reopened.ToString())));
+        }
+
+        claimRecord.PendingOutboxJson = OutboxItem.SerializeList(attachItems);
         await db.SaveChangesAsync(CancellationToken.None);
 
         WorkerLog.Info(context, WorkerName, "Duplicate alert attached to existing incident.",
             detail.EventId, detail.OrganizationId, detail.CorrelationId, new { incidentId = incident.Id, fingerprint });
         WorkerMetrics.Emit("DuplicateAlerts", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
 
-        await _eventPublisher.PublishAsync(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
-            new IncidentUpdatedDetail(
-                Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
-                incident.Id, "AlertCount", oldCount.ToString(), incident.AlertCount.ToString()),
-            CancellationToken.None);
-
-        if (oldSeverity != incident.Severity)
-        {
-            await _eventPublisher.PublishAsync(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
-                new IncidentUpdatedDetail(
-                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
-                    incident.Id, "Severity", oldSeverity.ToString(), incident.Severity.ToString()),
-                CancellationToken.None);
-        }
-
-        if (wasResolved)
-        {
-            await _eventPublisher.PublishAsync(EventSources.DeduplicationWorker, EventTypes.IncidentUpdated,
-                new IncidentUpdatedDetail(
-                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
-                    incident.Id, "Status", IncidentStatus.Resolved.ToString(), IncidentStatus.Reopened.ToString()),
-                CancellationToken.None);
-        }
+        await OutboxPublisher.PublishAllAsync(_eventPublisher, _queueSender, null, attachItems, CancellationToken.None);
+        await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
     }
 }

@@ -55,6 +55,14 @@ public class IncidentsController(
     [Authorize(Policy = OrgPolicies.Responder)]
     public async Task<ActionResult<IncidentResponse>> Create(Guid orgId, CreateIncidentRequest request, CancellationToken ct)
     {
+        if (request.AssignedResponderUserId is not null
+            && !await db.IsActiveMemberAsync(orgId, request.AssignedResponderUserId.Value, ct))
+        {
+            return Problem(
+                title: "Invalid request", detail: "AssignedResponderUserId is not an active member of this organization.",
+                statusCode: 400);
+        }
+
         var actor = await currentUserService.GetOrProvisionAsync(ct);
         var incident = new Incident
         {
@@ -89,6 +97,14 @@ public class IncidentsController(
     {
         var incident = await Find(orgId, incidentId, ct);
         if (incident is null) return NotFound();
+
+        if (request.AssignedResponderUserId is not null
+            && !await db.IsActiveMemberAsync(orgId, request.AssignedResponderUserId.Value, ct))
+        {
+            return Problem(
+                title: "Invalid request", detail: "AssignedResponderUserId is not an active member of this organization.",
+                statusCode: 400);
+        }
 
         var actor = await currentUserService.GetOrProvisionAsync(ct);
         var previousResponderId = incident.AssignedResponderUserId;

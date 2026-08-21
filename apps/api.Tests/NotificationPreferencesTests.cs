@@ -71,4 +71,20 @@ public class NotificationPreferencesTests(ApiTestFixture fixture)
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Put_RejectsUnknownTimeZoneId()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Prefs Bad Tz Org");
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/notification-preferences/me",
+            new UpdateNotificationPreferenceRequest(true, new TimeOnly(22, 0), new TimeOnly(7, 0), "Not/AZone"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Unknown time zone id.", body);
+    }
 }

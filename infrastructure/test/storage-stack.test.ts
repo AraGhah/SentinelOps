@@ -54,6 +54,18 @@ describe('StorageStack', () => {
     });
   });
 
+  it('enables point-in-time recovery on both DynamoDB tables', () => {
+    const template = synth();
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'sentinelops-alert-fingerprints',
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
+    });
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: 'sentinelops-dashboard-connections',
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
+    });
+  });
+
   it('uses DESTROY removal policy in dev and RETAIN in staging for data-bearing resources', () => {
     const devTemplate = synth(environments.dev);
     devTemplate.hasResource('AWS::DynamoDB::Table', { DeletionPolicy: 'Delete' });

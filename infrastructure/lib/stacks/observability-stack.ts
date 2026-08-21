@@ -5,6 +5,8 @@ import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as sns from 'aws-cdk-lib/aws-sns';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
@@ -30,6 +32,7 @@ const WORKER_QUEUE_NAMES = [
   'audit-log',
   'escalation-restart',
   'attachment-scan',
+  'dashboard-broadcast',
 ];
 
 // Every worker Lambda's fixed FunctionName (see EventProcessingStack's
@@ -103,9 +106,60 @@ export class ObservabilityStack extends cdk.Stack {
     this.alarmTopic = new sns.Topic(this, 'AlarmTopic', { topicName: 'sentinelops-alarms' });
     new cdk.CfnOutput(this, 'AlarmTopicArn', {
       value: this.alarmTopic.topicArn,
-      description: 'Subscribe an email/webhook endpoint to this topic to receive alarm notifications.',
+      description:
+        'Subscribe an email/webhook endpoint to this topic to receive alarm notifications.',
     });
     const alarmAction = new cwActions.SnsAction(this.alarmTopic);
+
+    // --- AWS Budget ----------------------------------------------------------
+    // Reuses AlarmTopic (above) as the notification channel — one place to
+    // subscribe an email/webhook for both operational alarms and billing
+    // warnings, rather than a second topic. AWS Budgets requires an explicit
+    // resource policy on the topic before it's allowed to publish to it (the
+    // service isn't implicitly trusted the way CloudWatch alarm actions are).
+    this.alarmTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: 'AllowBudgetsToPublish',
+        effect: iam.Effect.ALLOW,
+        principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
+        actions: ['sns:Publish'],
+        resources: [this.alarmTopic.topicArn],
+      }),
+    );
+
+    const budgetNotification = (
+      thresholdPercent: number,
+      notificationType: 'ACTUAL' | 'FORECASTED',
+    ) => ({
+      notification: {
+        notificationType,
+        comparisonOperator: 'GREATER_THAN',
+        threshold: thresholdPercent,
+        thresholdType: 'PERCENTAGE',
+      },
+      subscribers: [{ subscriptionType: 'SNS', address: this.alarmTopic.topicArn }],
+    });
+
+    // costFilters scopes this budget to just this environment's tagged spend
+    // (see the Environment tag every stack gets in bin/infrastructure.ts) —
+    // without it, a per-environment budget would actually track the whole
+    // account's spend, which is wrong once more than one environment exists
+    // in the same account.
+    new budgets.CfnBudget(this, 'MonthlyBudget', {
+      budget: {
+        budgetName: `sentinelops-${props.config.envName}-monthly`,
+        budgetType: 'COST',
+        timeUnit: 'MONTHLY',
+        budgetLimit: { amount: props.config.monthlyBudgetUsd, unit: 'USD' },
+        costFilters: { TagKeyValue: [`user:Environment$${props.config.envName}`] },
+      },
+      // 80% actual spend is a real warning; 100% forecasted catches a runaway
+      // cost trend early enough in the month to still do something about it.
+      notificationsWithSubscribers: [
+        budgetNotification(80, 'ACTUAL'),
+        budgetNotification(100, 'FORECASTED'),
+      ],
+    });
 
     // --- Custom metric helpers ----------------------------------------------
     // SentinelOps/Api and SentinelOps/Workers are populated by
@@ -116,10 +170,28 @@ export class ObservabilityStack extends cdk.Stack {
     // (unlike an ALB or API Gateway resource, a metric namespace is just a
     // string, so this stack can reference it even though it's deployed
     // before ApiStack/EventProcessingStack create the things that emit it).
-    const apiMetric = (metricName: string, statistic: string, dimensions?: Record<string, string>) =>
-      new cloudwatch.Metric({ namespace: 'SentinelOps/Api', metricName, statistic, dimensionsMap: dimensions });
-    const workerMetric = (metricName: string, statistic: string, dimensions?: Record<string, string>) =>
-      new cloudwatch.Metric({ namespace: 'SentinelOps/Workers', metricName, statistic, dimensionsMap: dimensions });
+    const apiMetric = (
+      metricName: string,
+      statistic: string,
+      dimensions?: Record<string, string>,
+    ) =>
+      new cloudwatch.Metric({
+        namespace: 'SentinelOps/Api',
+        metricName,
+        statistic,
+        dimensionsMap: dimensions,
+      });
+    const workerMetric = (
+      metricName: string,
+      statistic: string,
+      dimensions?: Record<string, string>,
+    ) =>
+      new cloudwatch.Metric({
+        namespace: 'SentinelOps/Workers',
+        metricName,
+        statistic,
+        dimensionsMap: dimensions,
+      });
     const queueDepthMetric = (queueName: string) =>
       new cloudwatch.Metric({
         namespace: 'AWS/SQS',
@@ -175,8 +247,19 @@ export class ObservabilityStack extends cdk.Stack {
       return a;
     };
 
-    alarm('api-high-error-rate', apiMetric('HttpErrors', 'Sum'), 20, cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD, 2);
-    alarm('api-high-latency', apiMetric('Latency', 'Average'), 2000, cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD);
+    alarm(
+      'api-high-error-rate',
+      apiMetric('HttpErrors', 'Sum'),
+      20,
+      cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      2,
+    );
+    alarm(
+      'api-high-latency',
+      apiMetric('Latency', 'Average'),
+      2000,
+      cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+    );
     // Account-wide (no FunctionName dimension) — a coarse "is something on
     // fire" signal; the dashboard's per-function graph (below) is what you'd
     // actually check to find which worker. Deliberately one alarm instead of
@@ -254,13 +337,19 @@ export class ObservabilityStack extends cdk.Stack {
               new cloudwatch.Metric({
                 namespace: 'AWS/ECS',
                 metricName: 'CPUUtilization',
-                dimensionsMap: { ClusterName: 'sentinelops-cluster', ServiceName: 'sentinelops-api' },
+                dimensionsMap: {
+                  ClusterName: 'sentinelops-cluster',
+                  ServiceName: 'sentinelops-api',
+                },
                 statistic: 'Average',
               }),
               new cloudwatch.Metric({
                 namespace: 'AWS/ECS',
                 metricName: 'MemoryUtilization',
-                dimensionsMap: { ClusterName: 'sentinelops-cluster', ServiceName: 'sentinelops-api' },
+                dimensionsMap: {
+                  ClusterName: 'sentinelops-cluster',
+                  ServiceName: 'sentinelops-api',
+                },
                 statistic: 'Average',
               }),
             ],
@@ -298,7 +387,10 @@ export class ObservabilityStack extends cdk.Stack {
         [
           new cloudwatch.GraphWidget({
             title: 'Acknowledgement / resolution time (seconds)',
-            left: [apiMetric('AcknowledgementTime', 'Average'), apiMetric('ResolutionTime', 'Average')],
+            left: [
+              apiMetric('AcknowledgementTime', 'Average'),
+              apiMetric('ResolutionTime', 'Average'),
+            ],
           }),
           new cloudwatch.GraphWidget({
             title: 'Worker Lambda errors, by function',

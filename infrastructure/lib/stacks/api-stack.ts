@@ -42,6 +42,13 @@ export interface ApiStackProps extends cdk.StackProps {
   eventBus: events.IEventBus;
   dataKey: kms.IKey;
   apiLogGroup: logs.ILogGroup;
+  // Defaults to true (real Route53 domain + ACM cert + API Gateway custom
+  // domain, matching this stack's original behavior). Pass false when no
+  // real hosted zone exists yet (see bin/infrastructure.ts's guard) — the
+  // ALB's internal HTTPS listener (VPC- and security-group-restricted, not
+  // public) drops to plain HTTP since there's no cert to terminate it with,
+  // and apiUrl falls back to API Gateway's own AWS-issued HTTPS endpoint.
+  deployCustomDomain?: boolean;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -108,6 +115,15 @@ export class ApiStack extends cdk.Stack {
         Aws__EventBridge__EventBusName: eventBus.eventBusName,
         Aws__Attachments__BucketName: props.attachmentsBucket.bucketName,
         Aws__Reports__BucketName: props.reportsBucket.bucketName,
+        // ASP.NET Core config binds Cors:AllowedOrigins (an array) from
+        // Cors__AllowedOrigins__0, __1, ... — see Program.cs's CORS policy.
+        // Without this, appsettings.json's localhost-only default is all
+        // that's ever configured, and the deployed API rejects every
+        // browser request from apps/web regardless of where it's hosted
+        // (this app's own FrontendStack or an external host like Vercel).
+        ...Object.fromEntries(
+          props.config.corsAllowedOrigins.map((origin, i) => [`Cors__AllowedOrigins__${i}`, origin]),
+        ),
       },
       secrets: {
         DB_SECRET_JSON: ecs.Secret.fromSecretsManager(dbSecret),
@@ -199,49 +215,82 @@ export class ApiStack extends cdk.Stack {
     // fromHostedZoneAttributes (not fromLookup) so cdk synth works with zero
     // AWS credentials — it only needs the two CfnParameter values below, no
     // live Route53 API call at synth time.
-    const hostedZoneId = new cdk.CfnParameter(this, 'HostedZoneId', {
-      type: 'String',
-      default: props.config.domains.hostedZoneIdDefault,
-      description: 'Route53 hosted zone ID that owns the API/frontend domains.',
-    }).valueAsString;
-    const hostedZoneName = new cdk.CfnParameter(this, 'HostedZoneName', {
-      type: 'String',
-      default: props.config.domains.hostedZoneNameDefault,
-      description: 'Route53 hosted zone name (e.g. sentinelops.example).',
-    }).valueAsString;
-    const apiDomainName = new cdk.CfnParameter(this, 'ApiDomainName', {
-      type: 'String',
-      default: props.config.domains.apiDomainNameDefault,
-      description: 'Public domain name for the API (e.g. api-dev.sentinelops.example).',
-    }).valueAsString;
+    const deployCustomDomain = props.deployCustomDomain ?? true;
 
-    const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'HostedZone', {
-      hostedZoneId,
-      zoneName: hostedZoneName,
-    });
+    let apiAlbListener: elbv2.ApplicationListener;
+    let apiDomain: apigatewayv2.DomainName | undefined;
 
-    const apiCertificate = new certificatemanager.Certificate(this, 'ApiCertificate', {
-      domainName: apiDomainName,
-      validation: certificatemanager.CertificateValidation.fromDns(hostedZone),
-    });
+    if (deployCustomDomain) {
+      const hostedZoneId = new cdk.CfnParameter(this, 'HostedZoneId', {
+        type: 'String',
+        default: props.config.domains.hostedZoneIdDefault,
+        description: 'Route53 hosted zone ID that owns the API/frontend domains.',
+      }).valueAsString;
+      const hostedZoneName = new cdk.CfnParameter(this, 'HostedZoneName', {
+        type: 'String',
+        default: props.config.domains.hostedZoneNameDefault,
+        description: 'Route53 hosted zone name (e.g. sentinelops.example).',
+      }).valueAsString;
+      const apiDomainName = new cdk.CfnParameter(this, 'ApiDomainName', {
+        type: 'String',
+        default: props.config.domains.apiDomainNameDefault,
+        description: 'Public domain name for the API (e.g. api-dev.sentinelops.example).',
+      }).valueAsString;
 
-    // TLS stays end-to-end on the ALB→VpcLink hop too — it's inside the VPC
-    // and security-group-restricted, but the cert already exists for the
-    // public domain, so there's no reason to drop to plain HTTP internally.
-    const apiHttpsListener = apiAlb.addListener('HttpsListener', {
-      port: 443,
-      certificates: [apiCertificate],
-      sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
-      defaultTargetGroups: [apiTargetGroup],
-    });
-    apiAlb.addListener('HttpRedirectListener', {
-      port: 80,
-      defaultAction: elbv2.ListenerAction.redirect({
-        protocol: 'HTTPS',
-        port: '443',
-        permanent: true,
-      }),
-    });
+      const hostedZone = route53.HostedZone.fromHostedZoneAttributes(this, 'HostedZone', {
+        hostedZoneId,
+        zoneName: hostedZoneName,
+      });
+
+      const apiCertificate = new certificatemanager.Certificate(this, 'ApiCertificate', {
+        domainName: apiDomainName,
+        validation: certificatemanager.CertificateValidation.fromDns(hostedZone),
+      });
+
+      // TLS stays end-to-end on the ALB→VpcLink hop too — it's inside the VPC
+      // and security-group-restricted, but the cert already exists for the
+      // public domain, so there's no reason to drop to plain HTTP internally.
+      apiAlbListener = apiAlb.addListener('HttpsListener', {
+        port: 443,
+        certificates: [apiCertificate],
+        sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
+        defaultTargetGroups: [apiTargetGroup],
+      });
+      apiAlb.addListener('HttpRedirectListener', {
+        port: 80,
+        defaultAction: elbv2.ListenerAction.redirect({
+          protocol: 'HTTPS',
+          port: '443',
+          permanent: true,
+        }),
+      });
+
+      apiDomain = new apigatewayv2.DomainName(this, 'ApiGatewayDomainName', {
+        domainName: apiDomainName,
+        certificate: apiCertificate,
+      });
+      new route53.ARecord(this, 'ApiAliasRecord', {
+        zone: hostedZone,
+        recordName: apiDomainName,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.ApiGatewayv2DomainProperties(
+            apiDomain.regionalDomainName,
+            apiDomain.regionalHostedZoneId,
+          ),
+        ),
+      });
+    } else {
+      // No real hosted zone yet (see bin/infrastructure.ts's guard), so
+      // there's no domain to issue an ACM cert for. This hop is inside the
+      // VPC and security-group-restricted regardless, so plain HTTP is the
+      // same trust boundary the HTTPS path would have had, just without a
+      // cert to terminate.
+      apiAlbListener = apiAlb.addListener('HttpListener', {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultTargetGroups: [apiTargetGroup],
+      });
+    }
 
     // --- API Gateway (HTTP API) + VpcLink ------------------------------------
     // Public entry point for the API — replaces the ALB in that role. The
@@ -257,29 +306,17 @@ export class ApiStack extends cdk.Stack {
       apiName: 'sentinelops-api',
       defaultIntegration: new apigatewayv2Integrations.HttpAlbIntegration(
         'ApiAlbIntegration',
-        apiHttpsListener,
+        apiAlbListener,
         { vpcLink },
       ),
     });
 
-    const apiDomain = new apigatewayv2.DomainName(this, 'ApiGatewayDomainName', {
-      domainName: apiDomainName,
-      certificate: apiCertificate,
-    });
-    new apigatewayv2.ApiMapping(this, 'ApiGatewayMapping', {
-      api: httpApi,
-      domainName: apiDomain,
-    });
-    new route53.ARecord(this, 'ApiAliasRecord', {
-      zone: hostedZone,
-      recordName: apiDomainName,
-      target: route53.RecordTarget.fromAlias(
-        new route53Targets.ApiGatewayv2DomainProperties(
-          apiDomain.regionalDomainName,
-          apiDomain.regionalHostedZoneId,
-        ),
-      ),
-    });
+    if (apiDomain) {
+      new apigatewayv2.ApiMapping(this, 'ApiGatewayMapping', {
+        api: httpApi,
+        domainName: apiDomain,
+      });
+    }
 
     // --- WAF (moved from the ALB to the API Gateway) --------------------------
     // AWS-managed rule groups for common web exploits + SQLi, plus a
@@ -347,7 +384,7 @@ export class ApiStack extends cdk.Stack {
       webAclArn: apiWebAcl.attrArn,
     });
 
-    this.apiUrl = `https://${apiDomainName}`;
+    this.apiUrl = apiDomain ? `https://${apiDomain.name}` : httpApi.apiEndpoint!;
     new cdk.CfnOutput(this, 'ApiUrl', { value: this.apiUrl });
     new cdk.CfnOutput(this, 'ApiHttpApiEndpoint', {
       value: httpApi.apiEndpoint,

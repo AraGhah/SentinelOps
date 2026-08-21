@@ -154,6 +154,11 @@ public class OrganizationsController(SentinelOpsDbContext db, ICurrentUserServic
         var settings = await db.OrganizationSettings.FirstOrDefaultAsync(s => s.OrganizationId == orgId, ct);
         if (settings is null) return NotFound();
 
+        if (!TimeZoneValidation.IsValid(request.TimeZone))
+        {
+            return Problem(title: "Invalid request", detail: "Unknown time zone id.", statusCode: 400);
+        }
+
         settings.TimeZone = request.TimeZone;
         settings.AlertNotificationEmail = request.AlertNotificationEmail;
         settings.RequireMfaForMembers = request.RequireMfaForMembers;

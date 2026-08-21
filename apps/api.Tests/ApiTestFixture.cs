@@ -26,6 +26,9 @@ public class ApiTestFixture : IAsyncLifetime
 
     public WebApplicationFactory<Program> Factory { get; private set; } = null!;
 
+    public FakeAttachmentStorageService AttachmentStorage =>
+        Factory.Services.GetRequiredService<FakeAttachmentStorageService>();
+
     public async Task InitializeAsync()
     {
         await _container.StartAsync();

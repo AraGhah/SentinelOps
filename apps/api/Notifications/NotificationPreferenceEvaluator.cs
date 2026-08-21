@@ -27,6 +27,14 @@ public static class NotificationPreferenceEvaluator
         {
             return false;
         }
+        catch (InvalidTimeZoneException)
+        {
+            // The id resolves to a zone whose data is corrupt/malformed on
+            // this host — same fallback as a zone that doesn't exist at all:
+            // treat quiet hours as unconfigured rather than letting an
+            // unhandled exception fail the whole notification.
+            return false;
+        }
 
         var localNow = TimeZoneInfo.ConvertTime(nowUtc, timeZone);
         var localTime = TimeOnly.FromDateTime(localNow.DateTime);

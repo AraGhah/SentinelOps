@@ -39,13 +39,8 @@ public class Function
         _channel = channel;
     }
 
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
-    {
-        foreach (var record in sqsEvent.Records)
-        {
-            await HandleAsync(record, context);
-        }
-    }
+    public Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context) =>
+        SqsBatchProcessor.RunAsync(sqsEvent, context, WorkerName, record => HandleAsync(record, context));
 
     private async Task HandleAsync(SQSEvent.SQSMessage record, ILambdaContext context)
     {
@@ -55,10 +50,25 @@ public class Function
 
         await using var db = WorkerDbContextFactory.Create(_connectionString, detail.OrganizationId);
 
-        if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, detail.EventId, CancellationToken.None))
+        var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, detail.EventId, CancellationToken.None);
+        if (claimState == ClaimState.AlreadyCompleted)
         {
             WorkerLog.Info(context, WorkerName, "Duplicate delivery, skipping.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId);
+            return;
+        }
+
+        if (claimState == ClaimState.PendingCompletion)
+        {
+            // A prior attempt already updated the Notification row (Delivered/
+            // Failed/Suppressed) and committed that — do NOT re-attempt
+            // delivery through _channel (that could double-send the email).
+            // Just replay the captured publish, if any, and finish.
+            WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
+                detail.EventId, detail.OrganizationId, detail.CorrelationId);
+            var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, pending, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
             return;
         }
 
@@ -67,6 +77,7 @@ public class Function
         {
             WorkerLog.Warn(context, WorkerName, "Notification record no longer exists, skipping.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId, new { notificationId = detail.NotificationId });
+            claimRecord.Completed = true;
             await db.SaveChangesAsync(CancellationToken.None);
             return;
         }
@@ -76,6 +87,7 @@ public class Function
             || NotificationPreferenceEvaluator.IsQuietHoursActive(preference, DateTimeOffset.UtcNow))
         {
             notification.Status = NotificationStatus.Suppressed;
+            claimRecord.Completed = true;
             await db.SaveChangesAsync(CancellationToken.None);
 
             WorkerLog.Info(context, WorkerName, "Notification suppressed by recipient preference.",
@@ -89,13 +101,19 @@ public class Function
             notification.Status = NotificationStatus.Failed;
             notification.FailedAtUtc = DateTimeOffset.UtcNow;
             notification.FailureReason = "Recipient no longer exists.";
+
+            var missingRecipientItems = new List<OutboxItem>
+            {
+                OutboxItem.EventBridge(EventSources.NotificationWorker, EventTypes.NotificationFailed,
+                    new NotificationFailedDetail(
+                        Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
+                        notification.Id, notification.FailureReason)),
+            };
+            claimRecord.PendingOutboxJson = OutboxItem.SerializeList(missingRecipientItems);
             await db.SaveChangesAsync(CancellationToken.None);
 
-            await _eventPublisher.PublishAsync(EventSources.NotificationWorker, EventTypes.NotificationFailed,
-                new NotificationFailedDetail(
-                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
-                    notification.Id, notification.FailureReason),
-                CancellationToken.None);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, missingRecipientItems, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
             WorkerMetrics.Emit("NotificationFailures", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
             return;
         }
@@ -105,6 +123,7 @@ public class Function
         {
             WorkerLog.Warn(context, WorkerName, "Incident no longer exists, skipping notification.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId, new { incidentId = detail.IncidentId });
+            claimRecord.Completed = true;
             await db.SaveChangesAsync(CancellationToken.None);
             return;
         }
@@ -119,14 +138,20 @@ public class Function
             notification.DeliveredAtUtc = DateTimeOffset.UtcNow;
             IncidentTimeline.Record(db, detail.OrganizationId, incident.Id, IncidentEventType.NotificationSent, actorUserId: null,
                 details: new { notification.RecipientUserId, notification.Channel, notification.Kind });
+
+            var deliveredItems = new List<OutboxItem>
+            {
+                OutboxItem.EventBridge(EventSources.NotificationWorker, EventTypes.NotificationDelivered,
+                    new NotificationDeliveredDetail(Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow, notification.Id)),
+            };
+            claimRecord.PendingOutboxJson = OutboxItem.SerializeList(deliveredItems);
             await db.SaveChangesAsync(CancellationToken.None);
 
             WorkerLog.Info(context, WorkerName, "Notification delivered.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId, new { notificationId = notification.Id });
 
-            await _eventPublisher.PublishAsync(EventSources.NotificationWorker, EventTypes.NotificationDelivered,
-                new NotificationDeliveredDetail(Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow, notification.Id),
-                CancellationToken.None);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, deliveredItems, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
             return;
         }
 
@@ -136,6 +161,9 @@ public class Function
             // happened, as far as the record is concerned) and let SQS
             // redeliver after the visibility timeout — up to the queue's
             // maxReceiveCount, after which it lands in the DLQ automatically.
+            // Nothing was claimed/committed for this event, so no outbox/claim
+            // cleanup is needed here — the thrown exception aborts before any
+            // SaveChangesAsync for this attempt.
             WorkerLog.Warn(context, WorkerName, "Transient send failure, will retry on redelivery.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId, new { notificationId = notification.Id, result.FailureReason });
             throw new TransientNotificationException(notification.Id, result.FailureReason);
@@ -144,16 +172,22 @@ public class Function
         notification.Status = NotificationStatus.Failed;
         notification.FailedAtUtc = DateTimeOffset.UtcNow;
         notification.FailureReason = result.FailureReason;
+
+        var failedItems = new List<OutboxItem>
+        {
+            OutboxItem.EventBridge(EventSources.NotificationWorker, EventTypes.NotificationFailed,
+                new NotificationFailedDetail(
+                    Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
+                    notification.Id, result.FailureReason ?? "Unknown failure.")),
+        };
+        claimRecord.PendingOutboxJson = OutboxItem.SerializeList(failedItems);
         await db.SaveChangesAsync(CancellationToken.None);
 
         WorkerLog.Warn(context, WorkerName, "Notification delivery failed permanently.",
             detail.EventId, detail.OrganizationId, detail.CorrelationId, new { notificationId = notification.Id, result.FailureReason });
 
-        await _eventPublisher.PublishAsync(EventSources.NotificationWorker, EventTypes.NotificationFailed,
-            new NotificationFailedDetail(
-                Guid.NewGuid(), detail.OrganizationId, detail.CorrelationId, DateTimeOffset.UtcNow,
-                notification.Id, result.FailureReason ?? "Unknown failure."),
-            CancellationToken.None);
+        await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, failedItems, CancellationToken.None);
+        await IdempotencyGuard.CompleteAsync(db, WorkerName, detail.EventId, CancellationToken.None);
         WorkerMetrics.Emit("NotificationFailures", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
     }
 }

@@ -131,8 +131,16 @@ jobs:
         run: npm run build
       # No AWS credentials needed — every ACM cert is DNS-validated against
       # an imported (not looked-up) hosted zone specifically so this works.
+      #
+      # staging/production are deliberately NOT synthed here: environments.ts
+      # still has a placeholder empty `hostedZoneIdDefault` for both (no real
+      # AWS account/domain exists for this project yet), and
+      # bin/infrastructure.ts now throws a loud, early error for exactly that
+      # case on any non-dev environment (see its guard, and the audit note
+      # this addresses). Synthing them here would make this job permanently
+      # red until real domain/hosted-zone values are filled in. Once real
+      # values exist, add both back — cd.yml's own `cdk deploy -c
+      # env=staging|production` calls already exercise the same guard/synth
+      # path as part of every deploy in the meantime.
       - working-directory: infrastructure
-        run: |
-          npx cdk synth -c env=dev
-          npx cdk synth -c env=staging
-          npx cdk synth -c env=production
+        run: npx cdk synth -c env=dev

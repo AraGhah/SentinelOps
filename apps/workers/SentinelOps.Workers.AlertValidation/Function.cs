@@ -33,13 +33,8 @@ public class Function
         _eventPublisher = eventPublisher;
     }
 
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
-    {
-        foreach (var record in sqsEvent.Records)
-        {
-            await HandleAsync(record, context);
-        }
-    }
+    public Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context) =>
+        SqsBatchProcessor.RunAsync(sqsEvent, context, WorkerName, record => HandleAsync(record, context));
 
     private async Task HandleAsync(SQSEvent.SQSMessage record, ILambdaContext context)
     {
@@ -49,13 +44,20 @@ public class Function
 
         await using var db = WorkerDbContextFactory.Create(_connectionString, detail.OrganizationId);
 
-        if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, detail.EventId, CancellationToken.None))
+        var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, detail.EventId, CancellationToken.None);
+        if (claimState != ClaimState.Claimed)
         {
             WorkerLog.Info(context, WorkerName, "Duplicate delivery, skipping.",
                 detail.EventId, detail.OrganizationId, detail.CorrelationId);
             return;
         }
 
+        // Not part of WRK-01's scope (see IncidentCreation/Notification/Deduplication/
+        // Escalation for the two-phase-completion fix) — this worker's outbound
+        // publish is a re-derivable pure function of `detail`, so at-least-once
+        // redelivery after a crash here just re-publishes the same conclusion
+        // rather than silently losing it or duplicating a record.
+        claimRecord.Completed = true;
         await db.SaveChangesAsync(CancellationToken.None);
 
         var reason = Validate(detail);

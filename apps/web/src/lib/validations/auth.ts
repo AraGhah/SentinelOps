@@ -1,7 +1,20 @@
 import { z } from 'zod';
 
 const email = z.string().min(1, 'Email is required').email('Enter a valid email address');
-const password = z.string().min(8, 'Password must be at least 8 characters');
+
+// Mirrors the backend's actual policy: [Required, MinLength(8), MaxLength(256)]
+// on RegisterRequest/ResetPasswordRequest (apps/api/Auth/Dtos.cs) plus the
+// Cognito user pool's password policy (infrastructure/lib/stacks/authentication-stack.ts:
+// requireLowercase/requireUppercase/requireDigits/requireSymbols all true).
+const password = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(256, 'Password must be at most 256 characters')
+  .regex(/[a-z]/, 'Password must include a lowercase letter')
+  .regex(/[A-Z]/, 'Password must include an uppercase letter')
+  .regex(/[0-9]/, 'Password must include a number')
+  .regex(/[^A-Za-z0-9]/, 'Password must include a symbol (e.g. ! @ # $ % &)');
+
 const code = z.string().min(6, 'Enter the 6-digit code').max(6, 'Enter the 6-digit code');
 
 export const loginSchema = z.object({

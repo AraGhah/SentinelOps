@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { apiClient, ApiError } from '@/lib/api-client';
 import {
   loginSchema,
@@ -11,7 +12,15 @@ import {
   resetPasswordSchema,
   mfaCodeSchema,
 } from '@/lib/validations/auth';
-import { clearSession, setSession, type Session } from '@/lib/auth/session';
+import {
+  clearMfaChallenge,
+  clearSession,
+  getMfaChallenge,
+  setMfaChallenge,
+  setSession,
+  type Session,
+} from '@/lib/auth/session';
+import type { Organization } from '@/lib/types';
 
 type TokenSet = {
   accessToken: string;
@@ -31,8 +40,10 @@ type LoginResponse = {
 };
 
 export type ActionResult = { error: string } | void;
-export type LoginResult =
-  { error: string } | { mfaRequired: true; email: string; challengeSession: string } | void;
+// Deliberately does NOT carry the Cognito challenge session token — that's
+// stored server-side in a short-lived httpOnly cookie (see FE-03 / setMfaChallenge)
+// and never sent to the client.
+export type LoginResult = { error: string } | { mfaRequired: true; email: string } | void;
 
 function toSession(email: string, tokens: TokenSet): Session {
   return {
@@ -40,8 +51,31 @@ function toSession(email: string, tokens: TokenSet): Session {
     idToken: tokens.idToken,
     refreshToken: tokens.refreshToken,
     email,
+    organizationId: null,
     expiresAt: Date.now() + tokens.expiresIn * 1000,
   };
+}
+
+// Resolves which organization should be active for a freshly-issued session:
+// prefers whatever the backend already considers "current" for this user
+// (see OrganizationsController.ListMine), falling back to the first org the
+// user belongs to. Returns null if the user isn't a member of any org yet.
+async function resolveActiveOrganizationId(accessToken: string): Promise<string | null> {
+  try {
+    const organizations = await apiClient.get<Organization[]>('/api/v1/organizations', {
+      token: accessToken,
+    });
+    const active = organizations.find((org) => org.isCurrent) ?? organizations[0];
+    return active?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildSession(email: string, tokens: TokenSet): Promise<Session> {
+  const session = toSession(email, tokens);
+  session.organizationId = await resolveActiveOrganizationId(session.accessToken);
+  return session;
 }
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -118,29 +152,34 @@ export async function login(values: { email: string; password: string }): Promis
   }
 
   if (response.mfaChallenge) {
-    return {
-      mfaRequired: true,
+    // Store the challenge server-side; the client only ever learns the
+    // email (needed to display/prefill the MFA form), never the session
+    // token itself. See FE-03.
+    await setMfaChallenge({
       email: response.mfaChallenge.email,
       challengeSession: response.mfaChallenge.session,
-    };
+    });
+    return { mfaRequired: true, email: response.mfaChallenge.email };
   }
 
   if (!response.tokens) {
     return { error: 'Sign-in failed. Please try again.' };
   }
 
-  await setSession(toSession(email, response.tokens));
+  await setSession(await buildSession(email, response.tokens));
   redirect('/dashboard');
 }
 
-export async function verifyMfa(values: {
-  email: string;
-  code: string;
-  challengeSession: string;
-}): Promise<ActionResult> {
+export async function verifyMfa(values: { email: string; code: string }): Promise<ActionResult> {
   const parsed = mfaCodeSchema.safeParse({ code: values.code });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid code' };
+  }
+
+  const challenge = await getMfaChallenge();
+  if (!challenge || challenge.email !== values.email) {
+    await clearMfaChallenge();
+    return { error: 'Your sign-in session has expired. Please sign in again.' };
   }
 
   let tokens: TokenSet;
@@ -148,13 +187,17 @@ export async function verifyMfa(values: {
     tokens = await apiClient.post<TokenSet>('/api/v1/auth/mfa/verify', {
       email: values.email,
       code: values.code,
-      session: values.challengeSession,
+      session: challenge.challengeSession,
     });
   } catch (error) {
+    // Cleared on failure too (not just success) — a stale/rejected challenge
+    // session shouldn't be retried silently; the user re-enters credentials.
+    await clearMfaChallenge();
     return { error: errorMessage(error, 'Invalid authentication code.') };
   }
 
-  await setSession(toSession(values.email, tokens));
+  await clearMfaChallenge();
+  await setSession(await buildSession(values.email, tokens));
   redirect('/dashboard');
 }
 
@@ -206,7 +249,9 @@ export async function refreshSession(session: Session): Promise<Session | null> 
       refreshToken: session.refreshToken,
       email: session.email,
     });
-    const next = toSession(session.email, tokens);
+    // Keep the already-resolved active org — no need to re-fetch the
+    // organization list on every silent token refresh.
+    const next: Session = { ...toSession(session.email, tokens), organizationId: session.organizationId };
     await setSession(next);
     return next;
   } catch {
@@ -244,6 +289,42 @@ export async function enableMfa(code: string): Promise<ActionResult> {
   } catch (error) {
     return { error: errorMessage(error, 'Invalid code. Please try again.') };
   }
+}
+
+// Lists every organization the signed-in user belongs to — backs the
+// minimal org switcher in the top nav (see FE-02).
+export async function listOrganizations(): Promise<Organization[]> {
+  const { getValidSession } = await import('@/lib/auth/session');
+  const session = await getValidSession();
+  if (!session) return [];
+
+  try {
+    return await apiClient.get<Organization[]>('/api/v1/organizations', {
+      token: session.accessToken,
+    });
+  } catch {
+    return [];
+  }
+}
+
+// Switches the active organization: tells the backend (so it's remembered
+// as the user's LastActiveOrganizationId server-side too) and updates the
+// local session cookie so subsequent org-scoped calls use it immediately.
+export async function switchOrganization(organizationId: string): Promise<ActionResult> {
+  const { getValidSession, setActiveOrganization } = await import('@/lib/auth/session');
+  const session = await getValidSession();
+  if (!session) return { error: 'Your session has expired. Please sign in again.' };
+
+  try {
+    await apiClient.post(`/api/v1/organizations/${organizationId}/switch`, undefined, {
+      token: session.accessToken,
+    });
+  } catch (error) {
+    return { error: errorMessage(error, 'Could not switch organization. Please try again.') };
+  }
+
+  await setActiveOrganization(organizationId);
+  revalidatePath('/', 'layout');
 }
 
 export async function logoutAction(): Promise<void> {

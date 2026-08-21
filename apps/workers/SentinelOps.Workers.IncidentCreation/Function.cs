@@ -41,13 +41,8 @@ public class Function
         _fingerprintStore = fingerprintStore;
     }
 
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
-    {
-        foreach (var record in sqsEvent.Records)
-        {
-            await HandleAsync(record, context);
-        }
-    }
+    public Task<SQSBatchResponse> FunctionHandler(SQSEvent sqsEvent, ILambdaContext context) =>
+        SqsBatchProcessor.RunAsync(sqsEvent, context, WorkerName, record => HandleAsync(record, context));
 
     private async Task HandleAsync(SQSEvent.SQSMessage record, ILambdaContext context)
     {
@@ -56,10 +51,25 @@ public class Function
 
         await using var db = WorkerDbContextFactory.Create(_connectionString, request.OrganizationId);
 
-        if (!await IdempotencyGuard.TryClaimAsync(db, WorkerName, request.EventId, CancellationToken.None))
+        var (claimState, claimRecord) = await IdempotencyGuard.TryClaimAsync(db, WorkerName, request.EventId, CancellationToken.None);
+        if (claimState == ClaimState.AlreadyCompleted)
         {
             WorkerLog.Info(context, WorkerName, "Duplicate delivery, skipping.",
                 request.EventId, request.OrganizationId, request.CorrelationId);
+            return;
+        }
+
+        if (claimState == ClaimState.PendingCompletion)
+        {
+            // A prior attempt already created the Incident row (or determined
+            // one wasn't needed) and committed that — do NOT run the creation
+            // logic again, which would create a second Incident for the same
+            // alert. Just replay the captured publish and finish.
+            WorkerLog.Info(context, WorkerName, "Retrying outbound publish for a previously-claimed event.",
+                request.EventId, request.OrganizationId, request.CorrelationId);
+            var pending = OutboxItem.DeserializeList(claimRecord.PendingOutboxJson);
+            await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, pending, CancellationToken.None);
+            await IdempotencyGuard.CompleteAsync(db, WorkerName, request.EventId, CancellationToken.None);
             return;
         }
 
@@ -68,6 +78,9 @@ public class Function
         {
             WorkerLog.Warn(context, WorkerName, "Alert no longer exists, skipping incident creation.",
                 request.EventId, request.OrganizationId, request.CorrelationId, new { alertId = request.AlertId });
+            // No outbound publish for this outcome — the claim is fully done
+            // once this commits.
+            claimRecord.Completed = true;
             await db.SaveChangesAsync(CancellationToken.None);
             // Nobody will ever set a real IncidentId for this fingerprint now
             // — release it so a future alert with the same fingerprint isn't
@@ -84,6 +97,7 @@ public class Function
         {
             WorkerLog.Info(context, WorkerName, "Alert already has an incident, skipping.",
                 request.EventId, request.OrganizationId, request.CorrelationId, new { incidentId = alert.IncidentId });
+            claimRecord.Completed = true;
             await db.SaveChangesAsync(CancellationToken.None);
             await _fingerprintStore.SetIncidentIdAsync(request.Fingerprint, alert.IncidentId.Value, FingerprintTtl, CancellationToken.None);
             return;
@@ -105,18 +119,45 @@ public class Function
         db.Incidents.Add(incident);
         alert.IncidentId = incident.Id;
 
+        var items = new List<OutboxItem>
+        {
+            OutboxItem.EventBridge(EventSources.IncidentCreationWorker, EventTypes.IncidentCreated,
+                new IncidentCreatedDetail(
+                    Guid.NewGuid(), request.OrganizationId, request.CorrelationId, DateTimeOffset.UtcNow,
+                    incident.Id, alert.Id, incident.ServiceId, incident.Title, SeverityMapping.ToEventSeverity(incident.Severity))),
+        };
+        claimRecord.PendingOutboxJson = OutboxItem.SerializeList(items);
+
         await db.SaveChangesAsync(CancellationToken.None);
 
+        // The fingerprint store isn't part of the outbox/PendingOutboxJson
+        // replay: it's DynamoDB, not an at-least-once "publish" that dropped
+        // messages when unretried, and SetIncidentIdAsync is itself
+        // idempotent (setting the same value twice is a no-op), so it's safe
+        // to just call it again here on every attempt.
         await _fingerprintStore.SetIncidentIdAsync(request.Fingerprint, incident.Id, FingerprintTtl, CancellationToken.None);
 
         WorkerLog.Info(context, WorkerName, "Incident created.",
             request.EventId, request.OrganizationId, request.CorrelationId, new { incidentId = incident.Id });
         WorkerMetrics.Emit("IncidentsCreated", 1, dimensions: new Dictionary<string, string> { ["Worker"] = WorkerName });
 
-        await _eventPublisher.PublishAsync(EventSources.IncidentCreationWorker, EventTypes.IncidentCreated,
-            new IncidentCreatedDetail(
-                Guid.NewGuid(), request.OrganizationId, request.CorrelationId, DateTimeOffset.UtcNow,
-                incident.Id, alert.Id, incident.ServiceId, incident.Title, (Severity)incident.Severity),
-            CancellationToken.None);
+        await OutboxPublisher.PublishAllAsync(_eventPublisher, null, null, items, CancellationToken.None);
+        await IdempotencyGuard.CompleteAsync(db, WorkerName, request.EventId, CancellationToken.None);
     }
+}
+
+// IncidentSeverity (apps/api/Domain/Incident.cs) and Severity (SentinelOps.Events)
+// are declared independently on purpose (see Severity.cs's comment), so a raw
+// cast between them would silently miscast if either enum's members/order ever
+// drifted. This makes the mapping explicit — a missed case fails loudly instead.
+internal static class SeverityMapping
+{
+    public static Severity ToEventSeverity(IncidentSeverity severity) => severity switch
+    {
+        IncidentSeverity.Critical => Severity.Critical,
+        IncidentSeverity.High => Severity.High,
+        IncidentSeverity.Medium => Severity.Medium,
+        IncidentSeverity.Low => Severity.Low,
+        _ => throw new ArgumentOutOfRangeException(nameof(severity), severity, "Unmapped IncidentSeverity value."),
+    };
 }

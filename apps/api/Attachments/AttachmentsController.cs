@@ -90,6 +90,25 @@ public class AttachmentsController(
             return Problem(title: "Attachment rejected", detail: "Storage key does not belong to this incident.", statusCode: 400);
         }
 
+        // The presigned PUT URL only binds Content-Type + SSE header, not
+        // size, so SizeBytes above is just the client's claim. Look up the
+        // actual object S3 received and use that as the source of truth —
+        // reject if it blows the cap, and persist the real size regardless
+        // of what the client claimed.
+        var actualSizeBytes = await storage.GetObjectSizeAsync(request.StorageKey, ct);
+        if (actualSizeBytes is null)
+        {
+            return Problem(
+                title: "Attachment rejected", detail: "No object was found at the given storage key.", statusCode: 400);
+        }
+        if (actualSizeBytes.Value > AttachmentPolicy.MaxSizeBytes)
+        {
+            return Problem(
+                title: "Attachment rejected",
+                detail: $"Uploaded object size {actualSizeBytes.Value} bytes exceeds the allowed maximum.",
+                statusCode: 400);
+        }
+
         var actor = await currentUserService.GetOrProvisionAsync(ct);
         var attachment = new Attachment
         {
@@ -98,7 +117,7 @@ public class AttachmentsController(
             IncidentId = incidentId,
             FileName = request.FileName,
             ContentType = request.ContentType,
-            SizeBytes = request.SizeBytes,
+            SizeBytes = actualSizeBytes.Value,
             StorageKey = request.StorageKey,
             UploadedByUserId = actor.Id,
             ScanStatus = AttachmentScanStatus.Pending,

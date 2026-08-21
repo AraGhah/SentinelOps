@@ -378,6 +378,7 @@ public class SentinelOpsDbContext(DbContextOptions<SentinelOpsDbContext> options
             b.HasKey(e => e.Id);
             b.Property(e => e.WorkerName).HasMaxLength(100);
             b.HasIndex(e => new { e.WorkerName, e.EventId }).IsUnique();
+            b.Property(e => e.Completed).HasDefaultValue(false);
         });
 
         modelBuilder.Entity<Notification>(b =>

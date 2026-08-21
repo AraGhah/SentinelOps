@@ -121,6 +121,35 @@ public class IncidentsTests(ApiTestFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Create_RejectsAssignedResponderWhoIsNotAnOrgMember()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Non Member Assign Org");
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents",
+            new CreateIncidentRequest("Should fail", null, IncidentSeverity.Low, null, Guid.NewGuid()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_RejectsAssignedResponderWhoIsNotAnOrgMember()
+    {
+        var owner = TestClientFactory.NewSub();
+        var client = fixture.Factory.CreateClientFor(owner);
+        var org = await CreateOrganizationAsync(client, "Non Member Reassign Org");
+        var incident = await CreateIncidentAsync(client, org.Id);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/v1/organizations/{org.Id}/incidents/{incident.Id}",
+            new UpdateIncidentRequest(incident.Title, incident.Description, incident.Severity, incident.ServiceId, Guid.NewGuid()));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     private static async Task<IncidentResponse> CreateIncidentAsync(HttpClient client, Guid orgId)
     {
         var response = await client.PostAsJsonAsync(

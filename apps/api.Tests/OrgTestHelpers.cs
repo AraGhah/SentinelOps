@@ -33,4 +33,17 @@ internal static class OrgTestHelpers
             $"/api/v1/organizations/{orgId}/members", Json.Options);
         return members!.Single(m => m.Email == inviteeEmail).MembershipId;
     }
+
+    // Same invite/accept flow, but returns the invitee's UserId — what
+    // endpoints validating a Guid user-id field against org membership
+    // (assigned responder, schedule rotation, escalation target, ...)
+    // actually need.
+    public static async Task<Guid> InviteAndAcceptUserIdAsync(
+        ApiTestFixture fixture, HttpClient ownerClient, Guid orgId, string inviteeSub, string inviteeEmail, OrganizationRole role)
+    {
+        await InviteAndAcceptAsync(fixture, ownerClient, orgId, inviteeSub, inviteeEmail, role);
+        var members = await ownerClient.GetFromJsonAsync<List<MemberResponse>>(
+            $"/api/v1/organizations/{orgId}/members", Json.Options);
+        return members!.Single(m => m.Email == inviteeEmail).UserId;
+    }
 }

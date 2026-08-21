@@ -55,6 +55,23 @@ export class StorageStack extends cdk.Stack {
         // still cost anything.
         { id: 'ExpireNoncurrentVersions', noncurrentVersionExpiration: cdk.Duration.days(90) },
       ],
+      // AttachmentsController hands the browser a presigned PUT URL and
+      // apps/web's client code PUTs the file straight to S3 (never through
+      // apps/api) — an XHR/fetch PUT, so it's subject to CORS like any other
+      // cross-origin browser request, same as ApiStack's Cors:AllowedOrigins
+      // and for the same reason (apps/web's deployed origin, wherever it's
+      // hosted). PUT needs ETag readable back for multipart/consistency
+      // checks; GET is included for symmetry in case attachments are ever
+      // fetched via XHR instead of a plain navigation/anchor download.
+      cors: [
+        {
+          allowedOrigins: props.config.corsAllowedOrigins,
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
+          allowedHeaders: ['*'],
+          exposedHeaders: ['ETag'],
+          maxAge: 3600,
+        },
+      ],
       removalPolicy: props.config.removalPolicy.dataBearing,
     });
 
@@ -129,11 +146,16 @@ export class StorageStack extends cdk.Stack {
     // holding the incident it currently maps to. TTL-expired items just stop
     // matching — they aren't a durable record, Postgres is (Alert/Incident
     // rows), so PAY_PER_REQUEST plus TTL is enough here.
+    // Pure cache (Postgres Alert/Incident rows are the durable record — see
+    // the comment above), but PITR is cheap enough on a PAY_PER_REQUEST table
+    // that there's little reason not to also cover accidental
+    // deletes/overwrites here.
     this.fingerprintTable = new dynamodb.Table(this, 'AlertFingerprintTable', {
       tableName: 'sentinelops-alert-fingerprints',
       partitionKey: { name: 'Fingerprint', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       timeToLiveAttribute: 'ExpiresAt',
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: props.config.removalPolicy.dataBearing,
     });
 
@@ -143,12 +165,15 @@ export class StorageStack extends cdk.Stack {
 
     // One item per live WebSocket connection, queried by org via the GSI when
     // broadcasting — TTL is a backstop for connections that vanish without a
-    // clean $disconnect.
+    // clean $disconnect. PITR enabled: this holds live user session state,
+    // and unlike the fingerprint table above there's no other durable copy
+    // of "who's currently connected" to rebuild from.
     this.connectionsTable = new dynamodb.Table(this, 'DashboardConnectionsTable', {
       tableName: 'sentinelops-dashboard-connections',
       partitionKey: { name: 'ConnectionId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       timeToLiveAttribute: 'ExpiresAt',
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy: props.config.removalPolicy.dataBearing,
     });
     this.connectionsTable.addGlobalSecondaryIndex({

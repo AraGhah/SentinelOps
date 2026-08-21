@@ -1,14 +1,10 @@
-'use client';
-
-import { useCallback, useEffect, useState } from 'react';
-import { ShieldAlert } from 'lucide-react';
-import { apiClient, ApiError } from '@/lib/api-client';
-import type { Incident } from '@/lib/types';
-import { LoadingState } from '@/components/states/loading-state';
+import Link from 'next/link';
+import { ShieldAlert, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { Incident, PagedResult } from '@/lib/types';
 import { EmptyState } from '@/components/states/empty-state';
-import { ErrorState } from '@/components/states/error-state';
 import { SeverityBadge } from '@/components/incidents/severity-badge';
 import { StatusBadge } from '@/components/incidents/status-badge';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -18,39 +14,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-type ViewState =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; incidents: Incident[] };
-
-export function IncidentsView() {
-  const [state, setState] = useState<ViewState>({ status: 'loading' });
-
-  const load = useCallback(() => {
-    setState({ status: 'loading' });
-    apiClient
-      .get<Incident[]>('/api/v1/incidents')
-      .then((incidents) => setState({ status: 'ready', incidents }))
-      .catch((error: unknown) => {
-        const message =
-          error instanceof ApiError ? (error.detail ?? error.message) : 'Unexpected error';
-        setState({ status: 'error', message });
-      });
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  if (state.status === 'loading') {
-    return <LoadingState rows={6} />;
-  }
-
-  if (state.status === 'error') {
-    return <ErrorState description={state.message} onRetry={load} />;
-  }
-
-  if (state.incidents.length === 0) {
+export function IncidentsView({ data }: { data: PagedResult<Incident> }) {
+  if (data.items.length === 0 && data.page === 1) {
     return (
       <EmptyState
         icon={ShieldAlert}
@@ -60,32 +25,69 @@ export function IncidentsView() {
     );
   }
 
+  const totalPages = Math.max(1, Math.ceil(data.totalCount / data.pageSize));
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Title</TableHead>
-          <TableHead>Severity</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Assignee</TableHead>
-          <TableHead>Created</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {state.incidents.map((incident) => (
-          <TableRow key={incident.id}>
-            <TableCell className="font-medium">{incident.title}</TableCell>
-            <TableCell>
-              <SeverityBadge severity={incident.severity} />
-            </TableCell>
-            <TableCell>
-              <StatusBadge status={incident.status} />
-            </TableCell>
-            <TableCell>{incident.assignedUserEmail ?? 'Unassigned'}</TableCell>
-            <TableCell>{new Date(incident.createdAt).toLocaleString()}</TableCell>
+    <div className="space-y-3">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Title</TableHead>
+            <TableHead>Severity</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Alerts</TableHead>
+            <TableHead>Created</TableHead>
           </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+        </TableHeader>
+        <TableBody>
+          {data.items.map((incident) => (
+            <TableRow key={incident.id}>
+              <TableCell className="font-medium">{incident.title}</TableCell>
+              <TableCell>
+                <SeverityBadge severity={incident.severity} />
+              </TableCell>
+              <TableCell>
+                <StatusBadge status={incident.status} />
+              </TableCell>
+              <TableCell>{incident.alertCount}</TableCell>
+              <TableCell>{new Date(incident.createdAtUtc).toLocaleString()}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Page {data.page} of {totalPages} &middot; {data.totalCount}{' '}
+          {data.totalCount === 1 ? 'incident' : 'incidents'}
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={data.page <= 1}
+            render={
+              data.page <= 1 ? undefined : <Link href={`/incidents?page=${data.page - 1}`} />
+            }
+          >
+            <ChevronLeft />
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={data.page >= totalPages}
+            render={
+              data.page >= totalPages ? undefined : (
+                <Link href={`/incidents?page=${data.page + 1}`} />
+              )
+            }
+          >
+            Next
+            <ChevronRight />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

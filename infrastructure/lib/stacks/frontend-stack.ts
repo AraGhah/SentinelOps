@@ -10,6 +10,8 @@ import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as certificatemanager from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/environments';
 
@@ -67,14 +69,26 @@ export class FrontendStack extends cdk.Stack {
     // request and the ALB listener rule below requires — this is what stops
     // the ALB (which must stay internet-reachable for CloudFront's standard
     // origin fetch, unlike the API's ALB behind a VpcLink) from being usable
-    // by anyone who finds its DNS name directly. Deploy-time value, not
-    // synth-time random — CDK synth must be deterministic.
-    const originVerifySecret = new cdk.CfnParameter(this, 'OriginVerifySecret', {
-      type: 'String',
-      noEcho: true,
+    // by anyone who finds its DNS name directly.
+    //
+    // Previously a required CfnParameter with no default — since CD never
+    // passed `--parameters OriginVerifySecret=...`, every deploy failed at
+    // the CloudFormation level. This stack now owns the secret's lifecycle
+    // end-to-end: CDK generates and stores it in Secrets Manager itself (same
+    // `fromGeneratedSecret`-style pattern DatabaseStack uses for the RDS
+    // credentials), so no manual parameter ever needs to be supplied.
+    // `.secretValue.unsafeUnwrap()` is safe here specifically because both
+    // consumers below (CloudFront's customHeaders map and the ALB listener
+    // condition's string[]) only need a CDK token string — it resolves to a
+    // `{{resolve:secretsmanager:...}}` dynamic reference in the synthesized
+    // template, not a literal value, so the real secret never appears in the
+    // CFN template or CDK output.
+    const originVerifySecret = new secretsmanager.Secret(this, 'OriginVerifySecret', {
+      secretName: `sentinelops/${props.config.envName}/origin-verify-secret`,
       description:
-        'Shared secret CloudFront sends as X-Origin-Verify; the ALB rejects requests without it. Set at deploy time.',
-    }).valueAsString;
+        'Shared secret CloudFront sends as X-Origin-Verify; the ALB rejects requests without it.',
+      generateSecretString: { excludePunctuation: true, passwordLength: 32 },
+    }).secretValue.unsafeUnwrap();
 
     const frontendTaskDefinition = new ecs.FargateTaskDefinition(this, 'FrontendTaskDefinition', {
       family: 'sentinelops-frontend',
@@ -204,11 +218,58 @@ export class FrontendStack extends cdk.Stack {
       }),
     });
 
+    // --- WAF (CloudFront scope) -------------------------------------------------
+    // Same AWS-managed rule groups + rate-based rule as ApiStack's REGIONAL
+    // WAF for API Gateway (see api-stack.ts), but with `scope: 'CLOUDFRONT'`.
+    // CLOUDFRONT-scope Web ACLs must be created in us-east-1 regardless of
+    // where the protected distribution's stack deploys — this isn't a special
+    // case here only because every environment's `env.region` is already
+    // us-east-1 (see EnvironmentConfig.env's header comment); if that ever
+    // changes, this WAF has to move to its own us-east-1-pinned stack the
+    // same way the CloudFront ACM certificate would.
+    const frontendWebAcl = new wafv2.CfnWebACL(this, 'FrontendWebAcl', {
+      name: `sentinelops-${props.config.envName}-frontend-waf`,
+      scope: 'CLOUDFRONT',
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        sampledRequestsEnabled: true,
+        cloudWatchMetricsEnabled: true,
+        metricName: `sentinelops-${props.config.envName}-frontend-waf`,
+      },
+      rules: [
+        {
+          name: 'AWSManagedCommonRuleSet',
+          priority: 0,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: { vendorName: 'AWS', name: 'AWSManagedRulesCommonRuleSet' },
+          },
+          visibilityConfig: {
+            sampledRequestsEnabled: true,
+            cloudWatchMetricsEnabled: true,
+            metricName: 'CommonRuleSet',
+          },
+        },
+        {
+          name: 'RateLimitPerIp',
+          priority: 1,
+          action: { block: {} },
+          statement: { rateBasedStatement: { limit: 2000, aggregateKeyType: 'IP' } },
+          visibilityConfig: {
+            sampledRequestsEnabled: true,
+            cloudWatchMetricsEnabled: true,
+            metricName: 'RateLimitPerIp',
+          },
+        },
+      ],
+    });
+
     // --- CloudFront ------------------------------------------------------------
     const distribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
       comment: `sentinelops-${props.config.envName}-frontend`,
       domainNames: [frontendDomainName],
       certificate: frontendCertificate,
+      webAclId: frontendWebAcl.attrArn,
       defaultBehavior: {
         origin: new cloudfrontOrigins.LoadBalancerV2Origin(frontendAlb, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,

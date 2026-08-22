@@ -172,9 +172,10 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
 
         // Concurrent duplicate arrives before the winner's incident-creation worker has run.
         var secondMessage = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alert.Id));
-        await Assert.ThrowsAsync<FingerprintPendingException>(
-            () => function.FunctionHandler(new SQSEvent { Records = [secondMessage] }, SqsEventFactory.Context()));
+        var response = await function.FunctionHandler(new SQSEvent { Records = [secondMessage] }, SqsEventFactory.Context());
 
+        var failure = Assert.Single(response.BatchItemFailures);
+        Assert.Equal(secondMessage.MessageId, failure.ItemIdentifier);
         Assert.Empty(publisher.Published);
     }
 
@@ -207,19 +208,13 @@ public class DeduplicationWorkerTests(WorkerTestFixture fixture)
         var tasks = alertIds.Select(async alertId =>
         {
             var message = SqsEventFactory.Wrap(EventSources.AlertValidationWorker, EventTypes.AlertValidated, Detail(orgId, alertId));
-            try
-            {
-                await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
-                return true;
-            }
-            catch (FingerprintPendingException)
-            {
-                return false;
-            }
+            var response = await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
+            return response.BatchItemFailures.Count == 0;
         });
         var results = await Task.WhenAll(tasks);
 
-        // Exactly one alert wins and hands off; every other concurrent arrival sees Pending and throws.
+        // Exactly one alert wins and hands off; every other concurrent arrival sees Pending
+        // and is reported as a batch item failure for SQS to redeliver.
         Assert.Single(queueSender.Sent);
         Assert.Equal(1, results.Count(succeeded => succeeded));
         Assert.Equal(99, results.Count(succeeded => !succeeded));

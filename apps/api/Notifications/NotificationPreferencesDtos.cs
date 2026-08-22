@@ -7,7 +7,7 @@ public record NotificationPreferenceResponse(
 
 public record UpdateNotificationPreferenceRequest(
     bool EmailEnabled, TimeOnly? QuietHoursStartLocal, TimeOnly? QuietHoursEndLocal,
-    [property: MaxLength(100)] string? TimeZoneId);
+    [MaxLength(100)] string? TimeZoneId);
 
 public record NotificationResponse(
     Guid Id, Guid IncidentId, Guid RecipientUserId, string Channel, string Kind, string Status,

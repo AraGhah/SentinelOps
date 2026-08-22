@@ -81,9 +81,10 @@ public class NotificationWorkerTests(WorkerTestFixture fixture)
             Guid.NewGuid(), orgId, Guid.NewGuid(), DateTimeOffset.UtcNow, notification.Id, notification.IncidentId, notification.RecipientUserId, notification.Channel);
         var message = SqsEventFactory.Wrap(EventSources.ResponderAssignmentWorker, EventTypes.NotificationRequested, detail);
 
-        await Assert.ThrowsAsync<TransientNotificationException>(
-            () => function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context()));
+        var response = await function.FunctionHandler(new SQSEvent { Records = [message] }, SqsEventFactory.Context());
 
+        var failure = Assert.Single(response.BatchItemFailures);
+        Assert.Equal(message.MessageId, failure.ItemIdentifier);
         Assert.Empty(publisher.Published);
 
         await using var verifyDb = fixture.CreateOrgScopedDb(orgId);

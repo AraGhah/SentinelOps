@@ -240,7 +240,10 @@ export async function refreshSession(session: Session): Promise<Session | null> 
       email: session.email,
     });
     // Keep the already-resolved active org; no need to re-fetch on every refresh.
-    const next: Session = { ...toSession(session.email, tokens), organizationId: session.organizationId };
+    const next: Session = {
+      ...toSession(session.email, tokens),
+      organizationId: session.organizationId,
+    };
     await setSession(next);
     return next;
   } catch {

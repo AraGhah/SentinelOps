@@ -27,7 +27,8 @@ export async function getIncidents(
     );
     return { status: 'ready', data };
   } catch (error) {
-    const message = error instanceof ApiError ? (error.detail ?? error.message) : 'Unexpected error';
+    const message =
+      error instanceof ApiError ? (error.detail ?? error.message) : 'Unexpected error';
     return { status: 'error', message };
   }
 }

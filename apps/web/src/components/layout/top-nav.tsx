@@ -83,7 +83,10 @@ function OrganizationSwitcher({
             }}
           >
             <Check
-              className={cn('size-4', org.id === activeOrganizationId ? 'opacity-100' : 'opacity-0')}
+              className={cn(
+                'size-4',
+                org.id === activeOrganizationId ? 'opacity-100' : 'opacity-0',
+              )}
             />
             <span className="truncate">{org.name}</span>
           </DropdownMenuItem>
@@ -118,7 +121,10 @@ export function TopNav({
         </BreadcrumbList>
       </Breadcrumb>
 
-      <OrganizationSwitcher organizations={organizations} activeOrganizationId={activeOrganizationId} />
+      <OrganizationSwitcher
+        organizations={organizations}
+        activeOrganizationId={activeOrganizationId}
+      />
 
       <div className="ml-auto flex items-center gap-2">
         {/* Search isn't implemented yet — disabled rather than a fake input

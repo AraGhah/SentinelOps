@@ -66,9 +66,7 @@ export function IncidentsView({ data }: { data: PagedResult<Incident> }) {
             variant="outline"
             size="sm"
             disabled={data.page <= 1}
-            render={
-              data.page <= 1 ? undefined : <Link href={`/incidents?page=${data.page - 1}`} />
-            }
+            render={data.page <= 1 ? undefined : <Link href={`/incidents?page=${data.page - 1}`} />}
           >
             <ChevronLeft />
             Previous

@@ -8,8 +8,11 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# .NET (apps/api, apps/workers) 
+# .NET (apps/api, apps/workers)
 bin/
+# infrastructure/bin holds the CDK app entry point (bin/infrastructure.ts), source
+# code rather than build output, so it must stay tracked.
+!infrastructure/bin/
 obj/
 *.user
 *.suo

@@ -80,7 +80,9 @@ describe('EventProcessingStack', () => {
     const mappingList = Object.values(mappings);
     expect(mappingList.length).toBeGreaterThan(0);
     for (const mapping of mappingList) {
-      expect((mapping as any).Properties.FunctionResponseTypes).toEqual(['ReportBatchItemFailures']);
+      expect((mapping as any).Properties.FunctionResponseTypes).toEqual([
+        'ReportBatchItemFailures',
+      ]);
     }
   });
 

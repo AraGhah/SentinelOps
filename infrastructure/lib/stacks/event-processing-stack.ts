@@ -21,8 +21,9 @@ interface WorkerQueue {
 }
 
 // Publish path for `dotnet publish` for each worker project — not built by
-// this stack; run `dotnet publish -c Release` in the worker's directory
-// before `cdk deploy`.
+// this stack; run `dotnet publish -c Release -p:PublishReadyToRun=false` on the worker
+// project before `cdk synth`/`cdk deploy` (see the cdk-synth job in ci.yml for why
+// ReadyToRun is off: it needs a runtime identifier, which the web API reference breaks).
 const WORKERS_DIR = path.join(__dirname, '..', '..', '..', 'apps', 'workers');
 
 export interface EventProcessingStackProps extends cdk.StackProps {

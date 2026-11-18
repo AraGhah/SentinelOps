@@ -9,6 +9,7 @@ public static class CognitoExceptionMapper
     // apps/web's apiClient already knows how to parse (title/detail).
     public static ProblemDetails ToProblemDetails(this Exception ex) => ex switch
     {
+        CognitoNotConfiguredException => Problem(503, "Authentication unavailable", "Sign-in and account creation are unavailable because authentication is not configured on the server."),
         UsernameExistsException => Problem(409, "Account already exists", "An account with this email already exists."),
         UserNotFoundException => Problem(404, "Account not found", "No account was found for this email."),
         UserNotConfirmedException => Problem(403, "Email not verified", "Please verify your email before signing in."),

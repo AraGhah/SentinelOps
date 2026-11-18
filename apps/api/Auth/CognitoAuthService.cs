@@ -17,6 +17,11 @@ public class CognitoAuthService
     public CognitoAuthService(IOptions<CognitoOptions> options)
     {
         _options = options.Value;
+        if (!_options.IsConfigured)
+        {
+            throw new CognitoNotConfiguredException();
+        }
+
         // Auth flows use the app client ID + bearer tokens, not SigV4, so anonymous credentials suffice.
         _client = new AmazonCognitoIdentityProviderClient(
             new AnonymousAWSCredentials(),

@@ -179,7 +179,19 @@ public class AuthController(CognitoAuthService authService, IAuditLogger auditLo
     private ObjectResult FromException(Exception ex)
     {
         var problem = ex.ToProblemDetails();
-        return StatusCode(problem.Status ?? 500, problem);
+        var status = problem.Status ?? 500;
+
+        // Known Cognito failures (bad password, existing account, ...) are expected and
+        // already explained to the client. Anything mapped to a 5xx is unexpected (e.g.
+        // misconfigured user pool/client, unreachable Cognito) and would otherwise be
+        // invisible: the client only ever sees a generic "Please try again."
+        if (status >= 500)
+        {
+            logger.LogError(ex, "Unexpected error handling {Method} {Path}",
+                Request.Method, Request.Path);
+        }
+
+        return StatusCode(status, problem);
     }
 }
 

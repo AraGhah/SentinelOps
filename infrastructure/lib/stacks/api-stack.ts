@@ -112,7 +112,10 @@ export class ApiStack extends cdk.Stack {
         // ASP.NET Core binds Cors:AllowedOrigins from Cors__AllowedOrigins__0, __1, ...
         // (see Program.cs). Without this, the API only allows localhost.
         ...Object.fromEntries(
-          props.config.corsAllowedOrigins.map((origin, i) => [`Cors__AllowedOrigins__${i}`, origin]),
+          props.config.corsAllowedOrigins.map((origin, i) => [
+            `Cors__AllowedOrigins__${i}`,
+            origin,
+          ]),
         ),
       },
       secrets: {

@@ -209,6 +209,15 @@ builder.Services.AddAuthorization(options =>
 
 var app = builder.Build();
 
+// Surface this at startup rather than on the first sign-up attempt.
+if (!cognitoOptions.IsConfigured)
+{
+    app.Logger.LogWarning(
+        "Cognito is not configured (Cognito:Region, Cognito:UserPoolId or Cognito:ClientId is blank). " +
+        "Sign-up, sign-in and token validation will fail until they are set; use the Region, " +
+        "UserPoolId and UserPoolClientId outputs of the Authentication CDK stack.");
+}
+
 // As early in the pipeline as possible so the segment covers the whole request.
 app.UseXRay("SentinelOpsApi");
 

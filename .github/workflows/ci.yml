@@ -129,6 +129,19 @@ jobs:
         run: npm ci
       - working-directory: infrastructure
         run: npm run build
+      # The stacks read each Lambda's published output from disk at synth time
+      # (lambda.Code.fromAsset), so the workers must be published first. ReadyToRun is
+      # switched off because it needs a runtime identifier, and building the web API
+      # project that the workers reference with one fails (NETSDK1152). Synth only
+      # needs the assets to exist at the default bin/Release/net10.0/publish path.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Publish Lambda workers
+        run: |
+          for worker in AlertValidation Analytics AttachmentScan AuditLog Dashboard Deduplication Escalation IncidentCreation Notification ResponderAssignment; do
+            dotnet publish "apps/workers/SentinelOps.Workers.$worker" -c Release -p:PublishReadyToRun=false
+          done
       # No AWS credentials needed — every ACM cert is DNS-validated against
       # an imported (not looked-up) hosted zone specifically so this works.
       #
